@@ -1,0 +1,43 @@
+[project]
+name = "diverse-dfa-gen"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "accelerate>=1.5.1",
+  "datasets>=3.3.2",
+  "huggingface-hub>=0.29.3",
+  "matplotlib>=3.10.1",
+  "numpy>=2.2.3",
+  "outlines>=0.2.1",
+  "scipy>=1.15.2",
+  "sentencepiece>=0.2.0",
+  "setuptools-rust>=1.11.1",
+  "transformers>=4.49.0",
+]
+
+[project.optional-dependencies]
+dev = ["poethepoet>=0.33.1", "ruff>=0.9.10"]
+
+[tool.poe.tasks]
+gen = "env PYTHONPATH=src python src/generate_re.py"
+eval = "env PYTHONPATH=src python src/metrics_eval.py"
+lint = "ruff check src"
+test = "pytest tests/"
+run_with_args = "env PYTHONPATH=src python src/your_package/cli_app.py"
+
+complex_task.cmd = """
+  echo "Setting up environment..." &&
+  env PYTHONPATH=src ANOTHER_VAR=foo python src/complex_script.py --config config.yaml
+"""
+complex_task.help = "Runs the complex script with setup."
+
+[tool.uv.workspace]
+members = ["case_study"]
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.33.1",
+    "setuptools-rust>=1.11.1",
+]
