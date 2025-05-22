@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2", "setuptools-rust"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minimal_dfa"
+authors= [{name = "Xiaokun Luan"}]
+description = "Construct minimal DFAs from regexex"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+keywords=[
+    "finite automata",
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+test = [
+    "psutil",
+    "setuptools-rust",
+]
+
+[tool.setuptools]
+packages = ["minimal_dfa"]
+package-dir = {"" = "python"}
+
+[tool.setuptools.package-data]
+"minimal_dfa" = ["py.typed", "**/*.pyi"]
+
+[tool.setuptools_scm]
+write_to = "python/minimal_dfa/_version.py"
