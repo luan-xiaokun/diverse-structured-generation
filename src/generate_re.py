@@ -8,10 +8,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import outlines
-import outlines.samplers
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide_rust import diverse_regex
+from diverse_guide import baseline_regex, diverse_regex
 from minimal_dfa import MinDivDFA
 
 TASK_REGEX = {
@@ -138,14 +138,23 @@ def main():
     transition_num = sum(map(len, transitions.values()))
     print(f"Number of states and transitions: {len(states)}, {transition_num}")
 
-    model = outlines.models.transformers(f"models/{args.model}", device="cuda")
-    sampler = outlines.samplers.multinomial(
-        top_k=args.top_k, top_p=args.top_p, temperature=args.temperature
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model, device_map="cuda", torch_dtype=torch.float16
     )
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+
+    generation_kwargs = {}
+    if args.top_k is not None:
+        generation_kwargs["top_k"] = args.top_k
+    if args.top_p is not None:
+        generation_kwargs["top_p"] = args.top_p
+    if args.temperature is not None:
+        generation_kwargs["temperature"] = args.temperature
+
     if args.baseline:
-        generator = outlines.generate.regex(model, regex, sampler)
+        generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
-        generator = diverse_regex(model, regex, sampler)
+        generator = diverse_regex(model, tokenizer, regex, **generation_kwargs)
 
     gen_data = GeneratedData(
         task,

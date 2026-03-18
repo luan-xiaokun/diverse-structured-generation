@@ -15,10 +15,8 @@ pub struct MinDivDFA {
     eos_token_id: u64,
     initial_state: u32,
     final_states: HashSet<u32>,
-    states: HashSet<u32>,
     transitions: HashMap<u32, HashMap<u8, u32>>,
     token_transitions: HashMap<u32, HashMap<u64, u32>>,
-    path_counter: HashMap<(u32, u32), u32>,
 }
 
 impl MinDivDFA {
@@ -68,7 +66,7 @@ impl MinDivDFA {
                 }
             }
         }
-        // collect all states
+        // collect all states (local variable only)
         let mut states = final_states.clone();
         states.insert(start_state.as_u32());
         for (state, inputs) in &transitions {
@@ -76,7 +74,8 @@ impl MinDivDFA {
             states.extend(inputs.values().cloned());
         }
         // iterate each state, construct token level transitions
-        for current_state in states.clone() {
+        for current_state in &states {
+            let current_state = *current_state;
             'token_loop: for (token, ids) in vocabulary.iter() {
                 if ids.contains(&eos_token_id) {
                     continue;
@@ -107,16 +106,12 @@ impl MinDivDFA {
                 .insert(eos_token_id, final_state);
         }
 
-        let path_counter: HashMap<(u32, u32), u32> = HashMap::default();
-
         Ok(Self {
             eos_token_id,
             initial_state: start_state.as_u32(),
             final_states,
-            states,
             transitions,
             token_transitions,
-            path_counter,
         })
     }
 

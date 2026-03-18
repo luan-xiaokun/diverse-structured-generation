@@ -22,7 +22,6 @@ pub struct DiverseGuideDFA {
     eos_token_id: TokenId,
     initial_state: StateId,
     final_states: HashSet<StateId>,
-    states: HashSet<StateId>,
     transitions: HashMap<StateId, HashMap<Byte, StateId>>,
     token_transitions: HashMap<StateId, HashMap<TokenId, StateId>>,
     allowed_token_ids: HashMap<StateId, Vec<TokenId>>,
@@ -48,7 +47,7 @@ impl DiverseGuideDFA {
         };
         // construct byte-level transitions and collect final states
         let (final_states, transitions) = Self::build_byte_transitions(&dfa, start_state)?;
-        // collect all byte-level states
+        // collect all byte-level states (local variable only)
         let mut states = final_states.clone();
         states.insert(start_state.as_u32());
         for (state, inputs) in &transitions {
@@ -119,12 +118,16 @@ impl DiverseGuideDFA {
                 }
             }
         }
+        // Prune token_transitions to only transitions leading to live states
+        for token_map in token_transitions.values_mut() {
+            token_map.retain(|_, to_state| live_states.contains(to_state));
+        }
+        token_transitions.retain(|_, token_map| !token_map.is_empty());
 
         Ok(Self {
             eos_token_id,
             initial_state: start_state.as_u32(),
             final_states,
-            states,
             transitions,
             token_transitions,
             allowed_token_ids: allowed_token_ids

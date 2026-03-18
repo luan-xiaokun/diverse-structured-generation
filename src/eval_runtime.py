@@ -5,12 +5,11 @@ This script evaluates structured generation efficiency.
 import argparse
 import time
 
-import outlines
-import outlines.samplers
-from outlines.models.transformers import Transformers
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm import tqdm
 
-from diverse_guide_rust import diverse_regex
+from diverse_guide import baseline_regex, diverse_regex
 from generate_re import TASK_PROMPT, TASK_REGEX
 
 
@@ -22,7 +21,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-1.5B-Instruct",
+        default="Qwen/Qwen2.5-0.5B",
         help="The model to use for generation.",
     )
     parser.add_argument(
@@ -54,18 +53,24 @@ def main():
     prompt = TASK_PROMPT.get(task)
     print(f"Task: {task}" + (" (baseline)" if args.baseline else ""))
 
-    model: Transformers = outlines.models.transformers(
-        f"models/{args.model}", device="cuda"
+    model = AutoModelForCausalLM.from_pretrained(
+        f"{args.model}", device_map="cuda", torch_dtype=torch.float16
     )
-    sampler = outlines.samplers.multinomial(
-        top_k=args.top_k, top_p=args.top_p, temperature=args.temperature
-    )
-    if args.baseline:
-        generator = outlines.generate.regex(model, regex, sampler)
-    else:
-        generator = diverse_regex(model, regex, sampler)
+    tokenizer = AutoTokenizer.from_pretrained(f"{args.model}")
 
-    tokenizer = model.tokenizer.tokenizer
+    generation_kwargs = {}
+    if args.top_k is not None:
+        generation_kwargs["top_k"] = args.top_k
+    if args.top_p is not None:
+        generation_kwargs["top_p"] = args.top_p
+    if args.temperature is not None:
+        generation_kwargs["temperature"] = args.temperature
+
+    if args.baseline:
+        generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
+    else:
+        generator = diverse_regex(model, tokenizer, regex, **generation_kwargs)
+
     total_token_num = 0
     total_time = 0.0
 

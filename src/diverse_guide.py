@@ -1,7 +1,7 @@
 """
-Diverse structured generation for regular expression constraints.
-The generation process is guided by a finite automaton (DFA) and
-adjusted based on DFA traversal history.
+Reference implementation of diverse structured generation (outlines-based).
+This module is kept for historical reference only.
+For the current implementation, see diverse_guide/ package.
 """
 
 import re

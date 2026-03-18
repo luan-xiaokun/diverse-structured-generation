@@ -1,9 +1,53 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+
+class MinimalDFA:
+    def __init__(self, regex: str) -> None:
+        """Creates a minimal DFA from a regex."""
+        ...
+
+    def get_initial_state(self) -> int:
+        """Get the initial state."""
+        ...
+
+    def is_final_state(self, state: int) -> bool:
+        """Determines whether the current state is a final state."""
+        ...
+
+    def get_final_states(self) -> set[int]:
+        """Get all final states."""
+        ...
+
+    def get_transitions(self) -> Dict[int, Dict[int, int]]:
+        """Returns the minimal DFA transitions as a Python Dict object."""
+        ...
+
+    def __repr__(self) -> str:
+        """Gets the debug string representation."""
+        ...
+
+    def __str__(self) -> str:
+        """Gets the string representation."""
+        ...
+
+    def __eq__(self, other: object) -> bool:
+        """Compares whether two DFAs are the same."""
+        ...
+
+    def __reduce__(self) -> tuple:
+        """Pickle support."""
+        ...
+
+    @classmethod
+    def from_binary(cls, data: bytes) -> "MinimalDFA":
+        """Deserialize from binary data."""
+        ...
+
 
 class MinDivDFA:
     def __init__(
         self, regex: str, eos_token_id: int, tokens_to_token_ids: dict[str, set[int]]
-    ):
+    ) -> None:
         """Creates a minimal DFA from a regex."""
         ...
 
@@ -31,7 +75,7 @@ class MinDivDFA:
         """Determines whether the current state is a final state."""
         ...
 
-    def get_final_states(self) -> List[int]:
+    def get_final_states(self) -> set[int]:
         """Get all final states."""
         ...
 
@@ -40,7 +84,7 @@ class MinDivDFA:
         ...
 
     def get_token_transitions(self) -> Dict[int, Dict[int, int]]:
-        """Returns the minimal DFA as a Python Dict object."""
+        """Returns the token transitions as a Python Dict object."""
         ...
 
     def get_allowed_inputs(self, state: int) -> Optional[list[int]]:
@@ -71,19 +115,30 @@ class MinDivDFA:
 
     def __str__(self) -> str:
         """Gets the string representation of the index."""
+        ...
 
     def __eq__(self, other: object) -> bool:
         """Compares whether two indexes are the same."""
         ...
 
-    def __deepcopy__(self, memo: dict) -> MinDivDFA:
+    def __deepcopy__(self, memo: dict) -> "MinDivDFA":
         """Makes a deep copy of the Index."""
         ...
+
+    def __reduce__(self) -> tuple:
+        """Pickle support."""
+        ...
+
+    @classmethod
+    def from_binary(cls, data: bytes) -> "MinDivDFA":
+        """Deserialize from binary data."""
+        ...
+
 
 class DiverseGuideDFA:
     def __init__(
         self, regex: str, eos_token_id: int, token_id_to_token: dict[int, str]
-    ):
+    ) -> None:
         """Creates a DFA from a regex to guide diverse generation."""
         ...
 
@@ -103,29 +158,29 @@ class DiverseGuideDFA:
         """Returns the set of final states of the DFA."""
         ...
 
-    def get_allowed_bytes(self, state: int) -> Optional[list[int]]:
-        """Returns the allowed characters for a given state."""
+    def get_allowed_bytes(self, state: int) -> list[int]:
+        """Returns the allowed bytes for a given state."""
         ...
 
-    def get_allowed_token_ids(self, state: int) -> Optional[list[int]]:
+    def get_allowed_token_ids(self, state: int) -> list[int]:
         """Returns the allowed token ids for a given state."""
         ...
 
-    def get_next_byte_state(self, state: int, char: int) -> Optional[int]:
+    def get_next_byte_state(self, state: int, char: int) -> int:
         """Gets the next byte state from the current state."""
         ...
 
-    def get_next_token_state(self, state: int, token_id: int) -> Optional[int]:
+    def get_next_token_state(self, state: int, token_id: int) -> int:
         """Gets the next token state from the current state."""
         ...
 
-    def get_byte_state_sequence(self, state: int, token_id: int) -> Optional[list[int]]:
+    def get_byte_state_sequence(self, state: int, token_id: int) -> list[int]:
         """Returns the byte state sequence when reading the token id."""
         ...
 
     def get_byte_transition_sequence(
         self, string: str
-    ) -> Optional[list[tuple[int, int]]]:
+    ) -> list[tuple[int, int]]:
         """Returns the byte transition sequence when reading the string."""
         ...
 
@@ -147,4 +202,13 @@ class DiverseGuideDFA:
 
     def compute_counts(self, state: int) -> tuple[list[int], list[int], list[int]]:
         """Computes the counts for the given state."""
+        ...
+
+    def __reduce__(self) -> tuple:
+        """Pickle support."""
+        ...
+
+    @classmethod
+    def from_binary(cls, data: bytes) -> "DiverseGuideDFA":
+        """Deserialize from binary data."""
         ...
