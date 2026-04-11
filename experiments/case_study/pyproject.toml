@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "case-study"
+version = "0.1.0"
+description = "Isolated case study for coverage experiments on generated inputs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "coverage>=7.10.6",
+    "idna>=3.11",
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

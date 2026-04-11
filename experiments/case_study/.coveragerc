@@ -1,0 +1,8 @@
+[run]
+branch = True
+omit = 
+	email_validator/__main__.py
+	email_validator/deliverability.py
+
+[report]
+precision = 2
