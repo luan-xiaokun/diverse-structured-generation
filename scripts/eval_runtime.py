@@ -6,26 +6,26 @@ import argparse
 import time
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX
 from tqdm import tqdm
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from diverse_guide import baseline_regex, diverse_regex
-from generate_re import TASK_PROMPT, TASK_REGEX
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Evaluate average token generation speed."
     )
-    parser.add_argument("task", type=str, help="The task to generate text for.")
+    parser.add_argument("grammar", type=str, help="The grammar to generate text for.")
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-0.5B",
+        default="Qwen/Qwen2.5-1.5B-Instruct",
         help="The model to use for generation.",
     )
     parser.add_argument(
-        "-n", type=int, default=1000, help="The number of tokens to generate."
+        "-n", type=int, default=2000, help="The number of tokens to generate."
     )
     parser.add_argument(
         "--max-tokens",
@@ -48,15 +48,20 @@ def parse_args():
 
 def main():
     args = parse_args()
-    task = args.task
-    regex = TASK_REGEX.get(task)
-    prompt = TASK_PROMPT.get(task)
-    print(f"Task: {task}" + (" (baseline)" if args.baseline else ""))
+    grammar = args.grammar
+    if grammar not in GRAMMAR_REGEX:
+        raise ValueError(
+            f"Unknown grammar {grammar!r}. Choose from: {list(GRAMMAR_REGEX)}"
+        )
+    regex = GRAMMAR_REGEX[grammar]
+    prompt = GRAMMAR_PROMPT[grammar]
+    print(f"Grammar: {grammar}" + (" (baseline)" if args.baseline else ""))
 
-    model = AutoModelForCausalLM.from_pretrained(
-        f"{args.model}", device_map="cuda", torch_dtype=torch.float16
-    )
-    tokenizer = AutoTokenizer.from_pretrained(f"{args.model}")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=dtype).to(device)
+    model.eval()
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
 
     generation_kwargs = {}
     if args.top_k is not None:
