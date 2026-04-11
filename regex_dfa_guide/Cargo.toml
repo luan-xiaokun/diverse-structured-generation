@@ -1,0 +1,32 @@
+[package]
+name = "regex_dfa_guide"
+version = "0.1.0"
+edition = "2021"
+description = "DFA-based guide for diverse regex-constrained LLM generation"
+license = "MIT"
+rust-version = "1.71.1"
+
+[dependencies]
+bincode = "2.0.1"
+regex-automata = "0.4.9"
+rustc-hash = "2.1.1"
+thiserror = "2.0.12"
+pyo3 = { version = "0.28.2", features = ["extension-module"], optional = true }
+
+
+[features]
+python-bindings = ["pyo3"]
+
+[lib]
+name = "regex_dfa_guide"
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = 'abort'
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

@@ -11,8 +11,6 @@ pub enum Error {
     IndexDfaError(#[from] Box<regex_automata::dfa::dense::BuildError>),
     #[error("Index failed since anchored universal start state doesn't exist")]
     DfaHasNoStartState,
-    #[error("Ref recursion limit reached: {0}")]
-    RefRecursionLimitReached(usize),
     #[error("Invalid state: {0}")]
     InvalidState(usize),
     #[error("Invalid token id: {0}")]
@@ -21,12 +19,6 @@ pub enum Error {
     NoTransitionFound(usize, usize),
     #[error("No token transition found for state {0} and input token {1}")]
     NoTokenTransitionFound(usize, usize),
-}
-
-impl Error {
-    pub fn is_recursion_limit(&self) -> bool {
-        matches!(self, Self::RefRecursionLimitReached(_))
-    }
 }
 
 #[cfg(feature = "python-bindings")]

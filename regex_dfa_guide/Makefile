@@ -22,19 +22,19 @@ setup:
 
 # Build the latest changes in the rust bindings and install it to the active environment.
 install:
-	pip install -e .
+	maturin develop
 
 # Build the latest changes in the rust bindings in release mode and install it to the active environment.
 install-release:
-	pip install .
+	maturin develop --release
 
 # Build only the Rust Python extension (in debug mode)
 build-extension-debug:
-	python setup.py build_rust --inplace --debug
+	maturin develop
 
 # Build only the Rust Python extension (in release mode)
 build-extension-release:
-	python setup.py build_rust --inplace --release
+	maturin develop --release
 
 # Watches changes in the rust bindings and updates the python extension in place.
 watch-extension:

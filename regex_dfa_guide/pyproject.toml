@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "regex-dfa-guide"
+authors = [{ name = "Xiaokun Luan" }]
+description = "DFA-based guide for diverse regex-constrained LLM generation"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+dynamic = ["version"]
+
+[tool.maturin]
+features = ["python-bindings"]
+python-source = "python"
+module-name = "regex_dfa_guide.regex_dfa_guide_rs"

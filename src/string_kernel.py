@@ -1,192 +1,218 @@
 """
-String kernel module for computing WD-shift kernel using C implementation.
+String kernel module: WD-shift kernel with native extension or NumPy fallback.
+
+Two backends are available, selected automatically at import time:
+
+* **C + OpenMP**: fastest; requires a C compiler and OpenMP.
+  Build with ``python scripts/build_wd_kernel.py``.
+* **Pure Python/NumPy** (``string_kernel_py``): no build step; cross-platform;
+  roughly 10–30× slower than the C version for large sample sets.
+
+The active backend is reported in ``STRING_KERNEL_BACKEND``.
+
+Public API (identical regardless of backend)
+--------------------------------------------
+- ``wd_shift_kernel(s1, s2, d, s) -> float``
+- ``compute_wd_kernel_matrix(sequences, d, s) -> np.ndarray``
+- ``compute_wd_kernel_multiple(x, sequences, d, s) -> np.ndarray``
 """
 
 import ctypes
 import errno as py_errno
 import os
+import platform
+from pathlib import Path
 
 import numpy as np
 
-lib_name = "wd_kernel.so"
-lib_path = f"wd_kernel/{lib_name}"
+# ---------------------------------------------------------------------------
+# Try C extension first
+# ---------------------------------------------------------------------------
 
-try:
-    wd_lib = ctypes.CDLL(lib_path)
-except OSError as e:
-    print(f"Error loading shared library: {e}")
-    print(f"Please ensure '{lib_name}' is compiled and accessible at '{lib_path}'")
-    exit(1)
-
-c_char_p_array = ctypes.POINTER(ctypes.c_char_p)
-c_int_array = ctypes.POINTER(ctypes.c_int)
-c_double_array = ctypes.POINTER(ctypes.c_double)
-
-wd_lib.wd_shift_kernel.argtypes = [
-    ctypes.c_char_p,
-    ctypes.c_int,
-    ctypes.c_char_p,
-    ctypes.c_int,
-    ctypes.c_int,
-    ctypes.c_int,
+_system = platform.system()
+_lib_name = "wd_kernel.dll" if _system == "Windows" else "wd_kernel.so"
+_module_dir = Path(__file__).resolve().parent
+_project_root = _module_dir.parent
+_candidate_lib_paths = [
+    # Preferred for packaged installs
+    _module_dir / "diverse_guide" / "_native" / _lib_name,
+    # Preferred for local development builds
+    _project_root / "build" / "native" / "wd_kernel" / _lib_name,
+    # Legacy fallback path
+    _project_root / "native" / "wd_kernel" / _lib_name,
 ]
-wd_lib.wd_shift_kernel.restype = ctypes.c_double
 
-wd_lib.wd_shift_kernel_matrix_omp.argtypes = [
-    c_char_p_array,
-    ctypes.c_int,
-    c_int_array,
-    ctypes.c_int,
-    ctypes.c_int,
-    c_double_array,
-]
-wd_lib.wd_shift_kernel_matrix_omp.restype = ctypes.c_int
+_c_char_p_array = ctypes.POINTER(ctypes.c_char_p)
+_c_int_array = ctypes.POINTER(ctypes.c_int)
+_c_double_array = ctypes.POINTER(ctypes.c_double)
 
-wd_lib.wd_shift_kernel_multiple_omp.argtypes = [
-    ctypes.c_char_p,
-    ctypes.c_int,
-    c_char_p_array,
-    ctypes.c_int,
-    c_int_array,
-    ctypes.c_int,
-    ctypes.c_int,
-]
-wd_lib.wd_shift_kernel_multiple_omp.restype = ctypes.c_int
+_wd_lib = None
+_loaded_lib_path: Path | None = None
+for _path in _candidate_lib_paths:
+    if not _path.exists():
+        continue
+    try:
+        _wd_lib = ctypes.CDLL(str(_path))
+        _loaded_lib_path = _path
+        break
+    except OSError:
+        continue
+
+if _wd_lib is not None:
+    _wd_lib.wd_shift_kernel.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+    ]
+    _wd_lib.wd_shift_kernel.restype = ctypes.c_double
+
+    _wd_lib.wd_shift_kernel_matrix_omp.argtypes = [
+        _c_char_p_array,
+        ctypes.c_int,
+        _c_int_array,
+        ctypes.c_int,
+        ctypes.c_int,
+        _c_double_array,
+    ]
+    _wd_lib.wd_shift_kernel_matrix_omp.restype = ctypes.c_int
+
+    _wd_lib.wd_shift_kernel_multiple_omp.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_int,
+        _c_char_p_array,
+        ctypes.c_int,
+        _c_int_array,
+        ctypes.c_int,
+        ctypes.c_int,
+        _c_double_array,
+    ]
+    _wd_lib.wd_shift_kernel_multiple_omp.restype = ctypes.c_int
+
+    STRING_KERNEL_BACKEND: str = "c"
+else:
+    STRING_KERNEL_BACKEND = "python"
 
 
-def wd_shift_kernel(s1: str, s2: str, d: int, s: int) -> float:
-    """Calculates WD-shift kernel using the C implementation."""
-    s1_bytes = s1.encode("utf-8")
-    s2_bytes = s2.encode("utf-8")
-    l1 = len(s1_bytes)
-    l2 = len(s2_bytes)
-
-    result = wd_lib.wd_shift_kernel(s1_bytes, l1, s2_bytes, l2, d, s)
-    return result
+# ---------------------------------------------------------------------------
+# C backend implementations
+# ---------------------------------------------------------------------------
 
 
-def compute_wd_kernel_matrix(sequences: list[str], d: int, s: int) -> np.ndarray:
-    """
-    Computes the pairwise WD-shift kernel matrix for a list of sequences
-    using a parallel C implementation with OpenMP.
+def _wd_shift_kernel_c(s1: str, s2: str, d: int, s: int) -> float:
+    s1b, s2b = s1.encode("utf-8"), s2.encode("utf-8")
+    return _wd_lib.wd_shift_kernel(s1b, len(s1b), s2b, len(s2b), d, s)
 
-    Args:
-        sequences (list[str]): A list of input sequences.
-        d (int): Maximum k-mer length (degree).
-        s (int): Maximum allowed shift.
 
-    Returns:
-        np.ndarray: An n x n numpy array containing the kernel matrix.
-
-    Raises:
-        ValueError: If input parameters are invalid.
-        MemoryError: If the C code failed to allocate memory.
-        OSError: For other C library errors or OpenMP runtime issues.
-        TypeError: If input is not a list of strings.
-    """
-    if not isinstance(sequences, list) or not all(
-        isinstance(seq, str) for seq in sequences
-    ):
-        raise TypeError("Input must be a list of strings")
-
+def _compute_wd_kernel_matrix_c(sequences: list[str], d: int, s: int) -> np.ndarray:
     n = len(sequences)
     if n == 0:
-        return np.zeros((0, 0))  # Return empty matrix for empty list
+        return np.zeros((0, 0), dtype=np.float64)
 
-    # Prepare arguments for C function
-    # 1. Encode strings and create char* array
-    encoded_seqs = [seq.encode("utf-8") for seq in sequences]
-    c_strings_arr = (ctypes.c_char_p * n)(*encoded_seqs)
+    encoded = [seq.encode("utf-8") for seq in sequences]
+    c_strings = (ctypes.c_char_p * n)(*encoded)
+    lengths = [len(e) for e in encoded]
+    c_lengths = (ctypes.c_int * n)(*lengths)
 
-    # 2. Create lengths array
-    lengths = [len(seq) for seq in encoded_seqs]
-    c_lengths_arr = (ctypes.c_int * n)(*lengths)
-
-    # 3. Create output buffer (using NumPy for convenience)
-    # Ensure C double matches NumPy float64
-    output_matrix_np = np.zeros((n, n), dtype=np.float64)
-    c_output_matrix_ptr = output_matrix_np.ctypes.data_as(c_double_array)
+    out = np.zeros((n, n), dtype=np.float64)
+    c_out = out.ctypes.data_as(_c_double_array)
 
     ctypes.set_errno(0)
-
-    status = wd_lib.wd_shift_kernel_matrix_omp(
-        c_strings_arr, n, c_lengths_arr, d, s, c_output_matrix_ptr
-    )
-
+    status = _wd_lib.wd_shift_kernel_matrix_omp(c_strings, n, c_lengths, d, s, c_out)
     if status != 0:
         c_errno = ctypes.get_errno()
-        error_msg = (
-            "C function wd_shift_kernel_matrix_omp failed with status"
-            f"{status} and errno {c_errno}: {os.strerror(c_errno)}"
+        msg = (
+            "wd_shift_kernel_matrix_omp failed "
+            f"(errno {c_errno}: {os.strerror(c_errno)})"
         )
-
         if c_errno == py_errno.EINVAL:
-            raise ValueError(f"Invalid argument provided to C function. {error_msg}")
+            raise ValueError(msg)
         elif c_errno == py_errno.ENOMEM:
-            raise MemoryError(f"C function failed to allocate memory. {error_msg}")
-        elif c_errno == py_errno.EDOM:
-            raise ValueError(f"Math domain error in C function. {error_msg}")
+            raise MemoryError(msg)
         else:
-            raise OSError(error_msg)
+            raise OSError(msg)
+    return out
 
-    return output_matrix_np
 
-
-def compute_wd_kernel_multiple(
+def _compute_wd_kernel_multiple_c(
     x: str, sequences: list[str], d: int, s: int
 ) -> np.ndarray:
-    x_bytes = x.encode("utf-8")
-    length = len(x_bytes)
-    encoded_seqs = [seq.encode("utf-8") for seq in sequences]
-    n = len(encoded_seqs)
-    c_strings_arr = (ctypes.c_char_p * n)(*encoded_seqs)
+    x_enc = x.encode("utf-8")
+    n = len(sequences)
+    encoded = [seq.encode("utf-8") for seq in sequences]
+    c_strings = (ctypes.c_char_p * n)(*encoded)
+    lengths = [len(e) for e in encoded]
+    c_lengths = (ctypes.c_int * n)(*lengths)
 
-    lengths = [len(seq) for seq in encoded_seqs]
-    c_lengths_arr = (ctypes.c_int * n)(*lengths)
-
-    output_vector = np.zeros(n, dtype=np.float64)
-    c_output_vector_ptr = output_vector.ctypes.data_as(c_double_array)
+    out = np.zeros(n, dtype=np.float64)
+    c_out = out.ctypes.data_as(_c_double_array)
 
     ctypes.set_errno(0)
-
-    status = wd_lib.wd_shift_kernel_multiple_omp(
-        x_bytes, length, c_strings_arr, n, c_lengths_arr, d, s, c_output_vector_ptr
+    status = _wd_lib.wd_shift_kernel_multiple_omp(
+        x_enc, len(x_enc), c_strings, n, c_lengths, d, s, c_out
     )
     if status != 0:
         c_errno = ctypes.get_errno()
-        error_msg = (
-            "C function wd_shift_kernel_matrix_omp failed with status"
-            f"{status} and errno {c_errno}: {os.strerror(c_errno)}"
+        msg = (
+            "wd_shift_kernel_multiple_omp failed "
+            f"(errno {c_errno}: {os.strerror(c_errno)})"
         )
-
         if c_errno == py_errno.EINVAL:
-            raise ValueError(f"Invalid argument provided to C function. {error_msg}")
+            raise ValueError(msg)
         elif c_errno == py_errno.ENOMEM:
-            raise MemoryError(f"C function failed to allocate memory. {error_msg}")
-        elif c_errno == py_errno.EDOM:
-            raise ValueError(f"Math domain error in C function. {error_msg}")
+            raise MemoryError(msg)
         else:
-            raise OSError(error_msg)
+            raise OSError(msg)
+    return out
 
-    return output_vector
+
+# ---------------------------------------------------------------------------
+# Public API: dispatch to C or Python backend
+# ---------------------------------------------------------------------------
+
+if STRING_KERNEL_BACKEND == "c":
+
+    def wd_shift_kernel(s1: str, s2: str, d: int, s: int) -> float:
+        """WD-shift kernel between two strings (C + OpenMP backend)."""
+        return _wd_shift_kernel_c(s1, s2, d, s)
+
+    def compute_wd_kernel_matrix(sequences: list[str], d: int, s: int) -> np.ndarray:
+        """Pairwise WD-shift kernel matrix (C + OpenMP backend)."""
+        if not isinstance(sequences, list) or not all(
+            isinstance(x, str) for x in sequences
+        ):
+            raise TypeError("sequences must be a list of str")
+        return _compute_wd_kernel_matrix_c(sequences, d, s)
+
+    def compute_wd_kernel_multiple(
+        x: str, sequences: list[str], d: int, s: int
+    ) -> np.ndarray:
+        """Kernel between one string and a list (C + OpenMP backend)."""
+        return _compute_wd_kernel_multiple_c(x, sequences, d, s)
+
+else:
+    from string_kernel_py import (
+        compute_wd_kernel_matrix,
+        compute_wd_kernel_multiple,
+        wd_shift_kernel,
+    )
+
+    # Re-export with module-level names so callers can use
+    # `from string_kernel import ...`
+    __all__ = [
+        "wd_shift_kernel",
+        "compute_wd_kernel_matrix",
+        "compute_wd_kernel_multiple",
+        "STRING_KERNEL_BACKEND",
+    ]
 
 
 if __name__ == "__main__":
-    seq1 = "ATGCGAT" * 100
-    seq2 = "TGCGAAT" * 100
-    max_degree = 3
-    max_shift = 1
-
-    for _ in range(1000):
-        kernel_val_1 = wd_shift_kernel(seq1, seq2, d=3, s=1)
-    print(f"Python calling C (d=3, s=1, beta=0.8): {kernel_val_1}")
-
-    for _ in range(1000):
-        kernel_val_2 = wd_shift_kernel(seq1, seq2, d=20, s=1)
-    print(f"Python calling C (d=2, s=1, beta=1.0): {kernel_val_2}")
-
-    mtx = compute_wd_kernel_matrix(
-        ["ATGCGAT", "TGCGAAT", "GCGATAG", "CGATAGC"], d=3, s=1
-    )
-    print("WD Kernel Matrix:")
-    print(mtx)
+    print(f"Backend: {STRING_KERNEL_BACKEND}")
+    seq1 = "ATGCGAT" * 5
+    seq2 = "TGCGAAT" * 5
+    print(f"K({seq1!r}, {seq2!r}, d=3, s=1) = {wd_shift_kernel(seq1, seq2, 3, 1):.6f}")
+    mtx = compute_wd_kernel_matrix(["ATGCGAT", "TGCGAAT", "GCGATAG"], d=3, s=1)
+    print("Kernel matrix:\n", mtx)
