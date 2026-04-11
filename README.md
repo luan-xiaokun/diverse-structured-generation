@@ -196,6 +196,36 @@ AutoModelForCausalLM.from_pretrained(model)
 
 ---
 
+## Minimal Smoke Test
+
+After finishing setup, run this quick check from repository root. It does not load
+a large language model; it only verifies that the Python package and Rust extension
+are installed and working together.
+
+```bash
+PYTHONPATH=src python - <<'PY'
+from regex_dfa_guide import DiverseGuideDFA
+from diverse_guide import diverse_regex, baseline_regex
+
+# Import check for public API
+assert callable(diverse_regex)
+assert callable(baseline_regex)
+
+# Rust extension check
+vocab = {0: "<eos>", 1: "a", 2: "b", 3: "ab"}
+dfa = DiverseGuideDFA(r"(?:ab)$", 0, vocab)
+s0 = dfa.get_initial_state()
+allowed = set(dfa.get_allowed_token_ids(s0))
+
+assert 1 in allowed and 3 in allowed  # "a" and "ab" should be valid from start
+print("Smoke test passed: imports and DFA extension are working.")
+PY
+```
+
+If this script prints `Smoke test passed`, your environment setup is correct.
+
+---
+
 ## Quick Start
 
 ```python
