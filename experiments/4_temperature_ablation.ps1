@@ -15,7 +15,7 @@ Invoke-GenerationSuite -ExtraArgs $commonAblationArgs
 Invoke-GenerationSuite -Baseline -ExtraArgs $commonAblationArgs
 
 # evaluate diverse samples with diversity metrics and perplexity
-Invoke-EvalSuite -ExtraArgs $pplArgs
+Invoke-EvalSuite -Experiment "temperature_ablation" -ResultSuffix "temperature-$temperature" -ExtraArgs $pplArgs
 
 # evaluate baseline samples with diversity metrics and perplexity
-Invoke-EvalSuite -Baseline -ExtraArgs $pplArgs
+Invoke-EvalSuite -Baseline -Experiment "temperature_ablation" -ResultSuffix "temperature-$temperature" -ExtraArgs $pplArgs

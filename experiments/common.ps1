@@ -26,6 +26,40 @@ function Get-GrammarExtraArgs {
     }
 }
 
+function Get-ResultSettingDir {
+    param([switch]$Baseline)
+
+    if ($Baseline) {
+        return "baseline"
+    }
+    return "diverse"
+}
+
+function Get-MetricResultPath {
+    param(
+        [string]$Experiment,
+        [switch]$Baseline,
+        [string]$Grammar,
+        [string]$ResultSuffix = ""
+    )
+
+    $setting = Get-ResultSettingDir -Baseline:$Baseline
+    if ($ResultSuffix) {
+        return "results/$Experiment/$setting/$ResultSuffix/$Grammar.json"
+    }
+    return "results/$Experiment/$setting/$Grammar.json"
+}
+
+function Get-RuntimeResultPath {
+    param(
+        [switch]$Baseline,
+        [string]$Grammar
+    )
+
+    $setting = Get-ResultSettingDir -Baseline:$Baseline
+    return "results/runtime/$setting/$Grammar.json"
+}
+
 function Invoke-GenerationSuite {
     param(
         [switch]$Baseline,
@@ -46,11 +80,14 @@ function Invoke-GenerationSuite {
 function Invoke-EvalSuite {
     param(
         [switch]$Baseline,
+        [string]$Experiment = "diversity",
+        [string]$ResultSuffix = "",
         [string[]]$ExtraArgs = @()
     )
 
     foreach ($grammar in $script:Grammars) {
-        $cmd = @("eval", $grammar, "--model", $script:DefaultModel)
+        $outputPath = Get-MetricResultPath -Experiment $Experiment -Baseline:$Baseline -Grammar $grammar -ResultSuffix $ResultSuffix
+        $cmd = @("eval", $grammar, "--model", $script:DefaultModel, "--experiment", $Experiment, "--output", $outputPath)
         $cmd += $ExtraArgs
         if ($Baseline) {
             $cmd += "--baseline"
@@ -63,7 +100,8 @@ function Invoke-RuntimeSuite {
     param([switch]$Baseline)
 
     foreach ($grammar in $script:Grammars) {
-        $cmd = @("eval-runtime", $grammar, "--model", $script:DefaultModel)
+        $outputPath = Get-RuntimeResultPath -Baseline:$Baseline -Grammar $grammar
+        $cmd = @("eval-runtime", $grammar, "--model", $script:DefaultModel, "--output", $outputPath)
         if ($Baseline) {
             $cmd += "--baseline"
         }

@@ -18,7 +18,14 @@ for component in "${ABLATION_COMPONENTS[@]}"; do
 done
 
 # evaluate the default and ablated runs
-run_poe eval css-color --model "$DEFAULT_MODEL"
+run_poe eval css-color \
+    --model "$DEFAULT_MODEL" \
+    --experiment component_ablation \
+    --output results/component_ablation/default/css-color.json
 for component in "${ABLATION_COMPONENTS[@]}"; do
-    run_poe eval css-color --model "$DEFAULT_MODEL" --ablation-component "$component"
+    run_poe eval css-color \
+        --model "$DEFAULT_MODEL" \
+        --experiment component_ablation \
+        --ablation-component "$component" \
+        --output "results/component_ablation/$component/css-color.json"
 done

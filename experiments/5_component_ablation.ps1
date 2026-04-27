@@ -28,7 +28,14 @@ foreach ($component in $ablationComponents) {
 }
 
 # evaluate the default and ablated runs
-Invoke-Poe eval css-color --model $script:DefaultModel
+Invoke-Poe eval css-color `
+    --model $script:DefaultModel `
+    --experiment component_ablation `
+    --output results/component_ablation/default/css-color.json
 foreach ($component in $ablationComponents) {
-    Invoke-Poe eval css-color --model $script:DefaultModel --ablation-component $component
+    Invoke-Poe eval css-color `
+        --model $script:DefaultModel `
+        --experiment component_ablation `
+        --ablation-component $component `
+        --output "results/component_ablation/$component/css-color.json"
 }

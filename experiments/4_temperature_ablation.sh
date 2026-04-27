@@ -16,7 +16,7 @@ run_generation_suite false "${COMMON_ABLATION_ARGS[@]}"
 run_generation_suite true "${COMMON_ABLATION_ARGS[@]}"
 
 # evaluate diverse samples with diversity metrics and perplexity
-run_eval_suite false "${PPL_ARGS[@]}"
+run_eval_suite false "temperature_ablation" "temperature-$TEMPERATURE" "${PPL_ARGS[@]}"
 
 # evaluate baseline samples with diversity metrics and perplexity
-run_eval_suite true "${PPL_ARGS[@]}"
+run_eval_suite true "temperature_ablation" "temperature-$TEMPERATURE" "${PPL_ARGS[@]}"
