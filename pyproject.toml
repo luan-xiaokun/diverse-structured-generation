@@ -1,10 +1,15 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "diverse-dfa-gen"
+name = "diverse-guide"
 version = "0.1.0"
 description = "Diversity-enhancing method for LLM structured generation with regex constraints"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "regex-dfa-guide",
   "numpy>=2.2.3",
   "scipy>=1.15.2",
   "torch==2.8.0",
@@ -85,5 +90,14 @@ select = ["E", "F", "W", "UP", "I"]
 [tool.ruff.format]
 docstring-code-format = true
 
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.uv.workspace]
 exclude = ["experiments/case_study"]
+
+[tool.uv.sources]
+regex-dfa-guide = { path = "regex_dfa_guide" }

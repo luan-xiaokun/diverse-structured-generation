@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from paths import get_data_dir_path
+from diverse_guide.evaluation.paths import get_data_dir_path
 
 
 def _args(**kwargs):

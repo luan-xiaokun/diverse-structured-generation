@@ -1,4 +1,4 @@
-"""Tests for perplexity.py (src/perplexity.py).
+"""Tests for diverse_guide.evaluation.perplexity.
 
 All tests use lightweight mock model and tokenizer objects so no LLM download
 is required.  torch is needed (already a project dependency).
@@ -9,7 +9,7 @@ import math
 import pytest
 import torch
 
-from perplexity import calculate_perplexity
+from diverse_guide.evaluation.perplexity import calculate_perplexity
 
 # ---------------------------------------------------------------------------
 # Mock fixtures

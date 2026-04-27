@@ -32,10 +32,11 @@ import numpy as np
 _system = platform.system()
 _lib_name = "wd_kernel.dll" if _system == "Windows" else "wd_kernel.so"
 _module_dir = Path(__file__).resolve().parent
-_project_root = _module_dir.parent
+_package_root = _module_dir.parent
+_project_root = _package_root.parent.parent
 _candidate_lib_paths = [
     # Preferred for packaged installs
-    _module_dir / "diverse_guide" / "_native" / _lib_name,
+    _package_root / "_native" / _lib_name,
     # Preferred for local development builds
     _project_root / "build" / "native" / "wd_kernel" / _lib_name,
     # Legacy fallback path
@@ -193,14 +194,14 @@ if STRING_KERNEL_BACKEND == "c":
         return _compute_wd_kernel_multiple_c(x, sequences, d, s)
 
 else:
-    from string_kernel_py import (
+    from .string_kernel_py import (
         compute_wd_kernel_matrix,
         compute_wd_kernel_multiple,
         wd_shift_kernel,
     )
 
     # Re-export with module-level names so callers can use
-    # `from string_kernel import ...`
+    # `from diverse_guide.evaluation.string_kernel import ...`
     __all__ = [
         "wd_shift_kernel",
         "compute_wd_kernel_matrix",

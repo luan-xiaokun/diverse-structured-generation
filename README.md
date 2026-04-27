@@ -6,41 +6,111 @@
 This repository is the artifact for the paper:
 
 > **Automata-Based Steering of Large Language Models for Diverse Structured Generation**
-> Xiaokun Luan, Zemin Wei, Yihao Zhang,  Meng Sun 
+> Xiaokun Luan, Zemin Wei, Yihao Zhang, Meng Sun
 > 26th International Conference on Formal Engineering Methods (ICFEM 2025)
 
 It implements a diversity-enhancing method for LLM structured generation constrained by regular expressions.
-Some code is adapted from [Outlines](https://github.com/dottxt-ai/outlines);
-[uthash](https://github.com/troydhanson/uthash) is used in the native C kernel implementation.
 
 ---
 
-## Algorithm
+## Table of Contents
 
-Standard regex-constrained generation (e.g., Outlines) builds a DFA from the regex and, at each generation step, masks all tokens that would lead to a dead state. This enforces validity but does not promote diversity: the model tends to produce the same high-probability outputs repeatedly.
+- [Diverse Structured Generation](#diverse-structured-generation)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+  - [Installation](#installation)
+    - [Path A: Run with Docker (recommended for reproducibility)](#path-a-run-with-docker-recommended-for-reproducibility)
+    - [Path B: Local environment setup](#path-b-local-environment-setup)
+      - [Step 1 - Python dependencies](#step-1---python-dependencies)
+      - [Step 2 - Rust DFA extension](#step-2---rust-dfa-extension)
+      - [Step 3 - WD-shift native extension *(evaluation only, optional)*](#step-3---wd-shift-native-extension-evaluation-only-optional)
+      - [Step 4 - Download models](#step-4---download-models)
+      - [Non-uv setup note](#non-uv-setup-note)
+  - [Minimal Smoke Test](#minimal-smoke-test)
+  - [Quick Start](#quick-start)
+  - [API Reference](#api-reference)
+    - [`diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`](#diverse_regexmodel-tokenizer-regex_str-gamma05-beta30-generation_kwargs)
+    - [`baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`](#baseline_regexmodel-tokenizer-regex_str-generation_kwargs)
+    - [`StatefulSequenceGeneratorAdapter`](#statefulsequencegeneratoradapter)
+    - [Parameters](#parameters)
+  - [Running Experiments](#running-experiments)
+    - [Reproducing paper results](#reproducing-paper-results)
+  - [Evaluation Backend](#evaluation-backend)
+  - [Tests](#tests)
+  - [Project Structure](#project-structure)
+  - [Acknowledgements](#acknowledgements)
+  - [License](#license)
 
-**This work** adds a logit adjustment on top of the masking step. For each allowed token at state $s$, the adjustment is:
+---
 
-$$\Delta_i = \gamma \cdot \text{logits\_range} \cdot \frac{\log(1 + \sum_j c^{\text{path}}_j)}{1 + c^{\text{path}}_i} \cdot \frac{1}{\beta \cdot (c^{\text{local}}_i)^2}$$
+## Overview
 
-where:
-- $c^{\text{path}}_i$ — minimum path-counter along token $i$'s byte-state sequence (global reward: tokens traversing less-visited paths are boosted)
-- $c^{\text{local}}_i$ — maximum local-state-counter along token $i$'s byte-state sequence (per-batch penalty: tokens that have already been used heavily in the current batch are suppressed)
-- $\gamma$, $\beta$ — reward and penalty scale hyperparameters
+This project adds regex-constrained diverse generation on top of standard Hugging Face Transformers workflows.
+You keep using `AutoModelForCausalLM` and `AutoTokenizer`, then create a guided generator via:
 
-The path counter is updated after each complete sequence is generated, so later generations within a session are steered away from already-explored DFA paths.
+- `diverse_regex(model, tokenizer, regex_str, ...)` for diversity-enhanced constrained generation
+- `baseline_regex(model, tokenizer, regex_str, ...)` for constrained generation without diversity adjustment
 
-The DFA is built by [regex-automata](https://github.com/BurntSushi/regex-automata) (Rust), minimized, and compiled into token-level transitions once per `(regex, tokenizer)` pair.
+Typical usage flow:
+
+1. Load model/tokenizer with `transformers.from_pretrained`.
+2. Create a generator with a target regex.
+3. Generate one sample (`__call__`) or multiple samples (`generate_batch`).
+
+Implementation split:
+
+- **Rust (`regex_dfa_guide/`)**: builds and minimizes DFA, compiles token-level transitions, and maintains counter/state logic efficiently.
+- **Python (`src/diverse_guide/`)**: integrates with Transformers generation and exposes user-facing APIs.
+- **Optional C/OpenMP (`native/wd_kernel/`)**: accelerates WD-shift kernel computation for evaluation metrics only.
 
 ---
 
 ## Installation
 
-### Step 1 — Python dependencies
+For reproducibility, this project supports two setup paths:
+
+- **Path A (Docker)**: easiest way to reproduce the full environment in a container
+- **Path B (Local)**: native setup on your host machine
+
+### Path A: Run with Docker (recommended for reproducibility)
+
+The repository provides a unified `Dockerfile` with multi-stage targets.
+
+> **Prerequisites**: NVIDIA GPU with CUDA support, NVIDIA drivers installed, and [nvidia-container-toolkit](https://github.com/NVIDIA/nvidia-container-toolkit) configured.
+
+Build targets:
+
+| Target | Purpose |
+|--------|---------|
+| `latest` (default) | GPU image for generation, evaluation, and tests |
+| `latest-cov` | Same as `latest`, plus Rust coverage tooling (`cargo-llvm-cov`) |
+
+Build images:
+
+```bash
+# Default image
+docker build -t diverse-guide:latest .
+
+# Image with coverage tools
+docker build --target latest-cov -t diverse-guide:latest-cov .
+```
+
+Run image:
+
+```bash
+docker run --rm -it --gpus all diverse-guide:latest
+```
+
+After entering the container, use the same commands shown in [Tests](#tests), [Running Experiments](#running-experiments), and [Minimal Smoke Test](#minimal-smoke-test).
+
+### Path B: Local environment setup
+
+#### Step 1 - Python dependencies
 
 We recommend [uv](https://docs.astral.sh/uv/) for dependency management.
-This project keeps build/test tools (including `maturin`) in the `dev` dependency group,
-so run `uv sync` first.
+This project keeps build/test tools in the `dev` dependency group.
+The root project also declares the Rust DFA extension as a local path dependency,
+so `uv sync` builds and installs it automatically.
 
 ```bash
 uv sync
@@ -48,11 +118,15 @@ source .venv/bin/activate          # Linux / macOS
 # .venv\Scripts\Activate.ps1       # Windows (PowerShell)
 ```
 
-### Step 2 — Rust DFA extension
+#### Step 2 - Rust DFA extension
 
-Requires **Rust ≥ 1.75** (install via [rustup](https://rustup.rs/)).
+Requires **Rust >= 1.75** (install via [rustup](https://rustup.rs/)).
 
-Run the build command from the repository root **after activating the root `.venv`**.
+If you use the recommended `uv sync` setup above, no separate command is needed:
+`regex-dfa-guide` is installed from the local `regex_dfa_guide/` directory.
+
+If you change Rust sources and want to rebuild the extension explicitly, run the
+build command from repository root **after activating the root `.venv`**.
 Do not use `uv run` inside `regex_dfa_guide/`, otherwise `uv` may resolve to that
 subdirectory's own environment.
 
@@ -60,29 +134,22 @@ subdirectory's own environment.
 maturin develop --release -m regex_dfa_guide/Cargo.toml
 ```
 
-This builds `regex_dfa_guide` and installs it into the currently active (root) virtual environment.
+This builds `regex_dfa_guide` and installs it into the currently active root virtual environment.
 Re-run after any change to `regex_dfa_guide/src/`.
 
-### Step 3 — WD-shift native extension *(evaluation only, optional)*
+#### Step 3 - WD-shift native extension *(evaluation only, optional)*
 
 The native extension is used only for computing the Vendi diversity metric during evaluation.
-It is **not required for generation**. If it is not built, a pure Python/NumPy fallback
-is used automatically (see [Evaluation backend](#evaluation-backend)).
+It is **not required for generation**.
+If it is not built, a pure Python/NumPy fallback is used automatically (see [Evaluation Backend](#evaluation-backend)).
 
 Quick build (recommended):
 
 ```bash
-# Linux / macOS
-python3 scripts/build_wd_kernel.py
+uv run python scripts/build_wd_kernel.py
 ```
 
-```powershell
-# Windows PowerShell
-python scripts/build_wd_kernel.py
-```
-
-The script compiles from `native/wd_kernel/` and places artifacts in
-`build/native/wd_kernel/`.
+The script compiles from `native/wd_kernel/` and places artifacts in `build/native/wd_kernel/`.
 
 Platform wrappers:
 
@@ -99,7 +166,7 @@ Platform wrappers:
 <details>
 <summary><b>Linux</b></summary>
 
-Requires `gcc` (≥ 9) with OpenMP support (standard on most distributions).
+Requires `gcc` (>= 9) with OpenMP support (standard on most distributions).
 
 ```bash
 cd native/wd_kernel && make && cd ../..
@@ -110,7 +177,7 @@ cd native/wd_kernel && make && cd ../..
 <details>
 <summary><b>macOS</b></summary>
 
-Apple's default `clang` does not include OpenMP.  Install it via Homebrew first:
+Apple's default `clang` does not include OpenMP. Install it via Homebrew first:
 
 ```bash
 brew install libomp
@@ -128,9 +195,9 @@ and links against Homebrew's `libomp`.
 </details>
 
 <details>
-<summary><b>Windows — WSL2 (recommended)</b></summary>
+<summary><b>Windows - WSL2 (recommended)</b></summary>
 
-Run everything inside a WSL2 Ubuntu shell.  All Linux instructions apply.
+Run everything inside a WSL2 Ubuntu shell. All Linux instructions apply.
 
 ```bash
 # inside WSL2
@@ -140,7 +207,7 @@ cd native/wd_kernel && make && cd ../..
 </details>
 
 <details>
-<summary><b>Windows — native (MinGW-w64)</b></summary>
+<summary><b>Windows - native (MinGW-w64)</b></summary>
 
 Install [MSYS2](https://www.msys2.org/) and its MinGW-w64 GCC toolchain:
 
@@ -157,22 +224,24 @@ make
 cd ../..
 ```
 
-> **Note**: the `.dll` will be loaded by `string_kernel.py` automatically on Windows.
+> **Note**: the `.dll` will be loaded by `diverse_guide.evaluation.string_kernel`
+> automatically on Windows.
 
 Alternatively, with MSVC (Visual Studio 2019+):
+
 ```cmd
 cl.exe /O2 /openmp /LD native\wd_kernel\wd_kernel.c /Febuild\native\wd_kernel\wd_kernel.dll
 ```
 
 </details>
 
-### Step 4 — Download models
+#### Step 4 - Download models
 
 Models are loaded via `transformers.from_pretrained`, so you can use any compatible model.
 The default model used in experiments is `Qwen/Qwen2.5-1.5B-Instruct`.
-If you want to reproduce the temperature-ablation results (Table 5 to Table 7),
-you should also prepare `microsoft/Phi-4-mini-instruct` for perplexity
-evaluation.
+
+If you want to reproduce the paper's **temperature-ablation experiment results (Table 5, Table 6, Table 7)**,
+you should also prepare `microsoft/Phi-4-mini-instruct` for perplexity evaluation.
 
 ```bash
 python -c "
@@ -183,7 +252,7 @@ AutoModelForCausalLM.from_pretrained(model)
 "
 ```
 
-Optional additional download for Table 5 to Table 7:
+Optional additional download for the paper's temperature-ablation experiment results (Table 5, Table 6, Table 7):
 
 ```bash
 python -c "
@@ -194,16 +263,36 @@ AutoModelForCausalLM.from_pretrained(model)
 "
 ```
 
+#### Non-uv setup note
+
+`uv` reads the repository's local path dependency configuration and installs
+`regex-dfa-guide` from `regex_dfa_guide/` automatically.
+Other installers may not understand this uv-specific source mapping.
+If you use `pip` directly, install the Rust extension first, then the root project:
+
+```bash
+pip install -e regex_dfa_guide
+pip install -e .
+```
+
+Alternatively, after installing `maturin`, build the Rust extension into the
+active environment before installing or running the root project:
+
+```bash
+maturin develop --release -m regex_dfa_guide/Cargo.toml
+pip install -e .
+```
+
 ---
 
 ## Minimal Smoke Test
 
-After finishing setup, run this quick check from repository root. It does not load
-a large language model; it only verifies that the Python package and Rust extension
-are installed and working together.
+After finishing setup, run this quick check from repository root.
+It does not load a large language model;
+it only verifies that the Python package and Rust extension are installed and working together.
 
 ```bash
-PYTHONPATH=src python - <<'PY'
+python - <<'PY'
 from regex_dfa_guide import DiverseGuideDFA
 from diverse_guide import diverse_regex, baseline_regex
 
@@ -252,7 +341,7 @@ sample = generator("Give me an IPv4 address.", max_tokens=20)
 samples = generator.generate_batch("Give me an IPv4 address.", n=10, max_tokens=20)
 ```
 
-See [`examples/`](examples/) for more complete usage patterns.
+See [examples/](examples/) for more complete usage patterns.
 
 ---
 
@@ -264,7 +353,8 @@ Returns a `StatefulSequenceGeneratorAdapter` configured for diverse generation.
 
 ### `baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`
 
-Returns a `StatefulSequenceGeneratorAdapter` with `gamma=0` (pure constrained generation, no diversity adjustment). Used as the comparison baseline.
+Returns a `StatefulSequenceGeneratorAdapter` with `gamma=0`
+(pure constrained generation, no diversity adjustment). Used as the comparison baseline.
 
 ### `StatefulSequenceGeneratorAdapter`
 
@@ -311,49 +401,52 @@ uv run poe eval --help
 ```
 
 By default, generated samples are saved to `data/diverse/{model}/` (diverse)
-or `data/baseline/{model}/` (baseline).  Use `--output` to override the output path,
-or `--stdout-only` to skip writing JSON files.
+or `data/baseline/{model}/` (baseline).
+Use `--output` to override the output path, or `--stdout-only` to skip writing JSON files.
 
 ### Reproducing paper results
 
-Paper-result reproduction scripts live under
-[experiments/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/README.md).
-That document maps each script to the corresponding paper tables and provides
-separate Linux/macOS and Windows entrypoints, setup prerequisites, experiment
-dependencies, expected outputs, a minimal sanity-check path, and a recommended
-execution order. The Table 9 case study is documented separately in
-[experiments/case_study/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/case_study/README.md).
-If you want a lightweight artifact check instead of full reproduction, start
-with the `Minimal Sanity Check` section in
-[experiments/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/README.md).
+Reproduction scripts live in [experiments/README.md](experiments/README.md).
+The document maps scripts to paper tables and provides Linux / macOS and Windows entrypoints.
+
+Table mapping summary:
+
+- paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3): `2_diversity_evaluation.*`
+- paper's efficiency-evaluation experiment results (Table 4): `3_efficiency_evaluation.*`
+- paper's temperature-ablation experiment results (Table 5, Table 6, Table 7): `4_temperature_ablation.*`
+- paper's component-ablation experiment results (Table 8): `5_component_ablation.*`
+- paper's case-study experiment results (Table 9): `experiments/case_study/`
+
+If you want a lightweight artifact check instead of full reproduction,
+start with `Minimal Sanity Check` in [experiments/README.md](experiments/README.md).
 
 ---
 
-## Evaluation backend
+## Evaluation Backend
 
-The Vendi score metric requires computing a pairwise WD-shift kernel matrix.  Two
-backends are supported, selected automatically at import time:
+The Vendi score metric requires computing a pairwise WD-shift kernel matrix.
+Two backends are supported, selected automatically at import time:
 
 | Backend | Speed (n=500) | Build required | Platform |
 |---------|---------------|----------------|----------|
-| C + OpenMP (`native/wd_kernel/` source, `build/native/wd_kernel/` artifact) | ~0.02–0.06 s | `python scripts/build_wd_kernel.py` | Linux, macOS, Windows (MinGW/MSVC) |
-| Pure Python/NumPy (fallback) | ~1–2 s (parallel) | none | all platforms |
+| C + OpenMP (`native/wd_kernel/` source, `build/native/wd_kernel/` artifact) | ~0.02-0.06 s | `uv run python scripts/build_wd_kernel.py` | Linux, macOS, Windows (MinGW/MSVC) |
+| Pure Python/NumPy (fallback) | ~1-2 s (parallel) | none | all platforms |
 
-The fallback uses `concurrent.futures.ProcessPoolExecutor` to parallelize across all
-available CPU cores.  For n=1000 on an 8-core machine, it takes roughly 10–20 s;
-the C extension takes < 0.5 s.
+The fallback uses `concurrent.futures.ProcessPoolExecutor` to parallelize across all available CPU cores.
+For n=1000 on an 8-core machine, it takes roughly 10-20 s; the C extension takes < 0.5 s.
 
 To check which backend is active:
 
 ```python
-from string_kernel import STRING_KERNEL_BACKEND  # "c" or "python"
+from diverse_guide.evaluation.string_kernel import STRING_KERNEL_BACKEND  # "c" or "python"
 ```
 
 ---
 
 ## Tests
 
-The test suite does **not** require a language model. All tests use a small mock tokenizer and synthetic DFA inputs.
+The test suite does **not** require a language model.
+All tests use a small mock tokenizer and synthetic DFA inputs.
 
 ```bash
 # Run all tests with branch + statement coverage
@@ -364,7 +457,7 @@ pytest --cov=diverse_guide --cov-report=term-missing --cov-branch
 ```
 
 Coverage is reported for the `diverse_guide` package (the core deliverable).
-The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [`tests/test_dfa.py`](tests/test_dfa.py).
+The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tests/test_dfa.py](tests/test_dfa.py).
 
 Current test and coverage status (latest local run):
 
@@ -389,36 +482,61 @@ cargo install cargo-llvm-cov
 uv run poe cov-rust
 ```
 
+Docker note:
+
+- If you use Docker and need Rust coverage, either build `diverse-guide:latest-cov`,
+  or install `cargo-llvm-cov` (and required LLVM tooling) manually inside `diverse-guide:latest`.
+
 ---
 
 ## Project Structure
 
-```
+```text
 src/
-  diverse_guide/          # Core Python library (the deliverable)
-    __init__.py           # Public API: diverse_regex, baseline_regex, ...
-    guide_rust.py         # DiverseRegexLogitsProcessor, StatefulSequenceGeneratorAdapter
-    vocab.py              # Tokenizer vocabulary decoding utilities
-  string_kernel.py        # Evaluation utility: WD-shift kernel (C or NumPy backend)
-  string_kernel_py.py     # Evaluation utility: pure NumPy WD-shift kernel (fallback)
-  paths.py                # Evaluation utility: output directory path helpers
-  perplexity.py           # Evaluation utility: model perplexity calculation
-regex_dfa_guide/          # Rust extension (DFA construction + token mapping + counters)
+  diverse_guide/          # Core Python library (public API and logits processor)
+    __init__.py
+    guide_python.py
+    guide_rust.py
+    vocab.py
+    evaluation/           # Artifact reproduction and evaluation utilities
+      metrics.py          # Evaluation metric wrappers
+      paths.py            # Output directory path helpers
+      perplexity.py       # Perplexity calculation utility
+      string_kernel.py    # WD-shift kernel selector (C or NumPy backend)
+      string_kernel_py.py # Pure NumPy WD-shift kernel fallback
+
+regex_dfa_guide/          # Rust extension package (DFA construction + counters)
   src/
-    diverse_guide_dfa.rs  # DfaIndex, DiverseGuideDFA, counter methods
-    python_bindings/      # PyO3 bindings exposing DiverseGuideDFA to Python
-native/wd_kernel/         # Native C extension source (evaluation metric only)
-build/native/wd_kernel/   # Built native artifacts (.so/.dll), generated by script
+    diverse_guide_dfa.rs
+    error.rs
+    lib.rs
+    python_bindings/
+
+native/wd_kernel/         # Native C/OpenMP WD-shift kernel source
+build/native/wd_kernel/   # Built native artifacts (.so/.dylib/.dll)
+
 scripts/
-  generate_re.py          # Run generation for a predefined task
-  metrics_eval.py         # Compute diversity metrics on generated samples
+  generate_re.py          # Generate constrained samples
+  metrics_eval.py         # Compute diversity metrics
   eval_runtime.py         # Measure generation throughput
-  benchmark_wd_kernel.py  # Benchmark C vs NumPy kernel backends
-examples/                 # Standalone usage examples (no LLM required for DFA examples)
-tests/                    # Pytest suite (no LLM required)
-experiments/              # Reproduction scripts and case study for the paper tables
-deprecated/               # Archived earlier implementation (kept for reference)
+  build_wd_kernel.py      # Build/check WD-kernel extension
+  benchmark_wd_kernel.py  # Benchmark C vs NumPy kernel backend
+
+examples/                 # Standalone usage examples
+tests/                    # Pytest suite
+experiments/              # Paper reproduction scripts and case study
+archive/deprecated/       # Archived earlier implementations and guides
+
+Dockerfile                # Main container build
+Dockerfile.cpu            # CPU-targeted container variant
+Dockerfile.gpu            # GPU-targeted container variant
 ```
+
+---
+
+## Acknowledgements
+
+[uthash](https://github.com/troydhanson/uthash) is used in the native C kernel implementation.
 
 ---
 

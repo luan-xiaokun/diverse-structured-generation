@@ -1,8 +1,9 @@
 """
 CLI script: evaluate diversity metrics for generated samples.
 
-Pure evaluation functions live in ``src/metrics.py``; this script handles
-argument parsing, data loading, and optional perplexity computation.
+Pure evaluation functions live in ``diverse_guide.evaluation.metrics``; this
+script handles argument parsing, data loading, and optional perplexity
+computation.
 """
 
 import argparse
@@ -10,17 +11,17 @@ import json
 
 import numpy as np
 
-from metrics import (
+from diverse_guide.evaluation.metrics import (
     distinct_ngram,
     path_coverage,
     state_coverage,
     transition_coverage,
     vendi_score,
 )
-from paths import get_data_dir_path
-from perplexity import calculate_perplexity
+from diverse_guide.evaluation.paths import get_data_dir_path
+from diverse_guide.evaluation.perplexity import calculate_perplexity
+from diverse_guide.evaluation.string_kernel import compute_wd_kernel_matrix
 from regex_dfa_guide import DiverseGuideDFA
-from string_kernel import compute_wd_kernel_matrix
 
 
 def make_metric_line_plot(

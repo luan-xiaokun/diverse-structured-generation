@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from metrics import (
+from diverse_guide.evaluation.metrics import (
     distinct_ngram,
     get_coverage_ratio,
     path_coverage,

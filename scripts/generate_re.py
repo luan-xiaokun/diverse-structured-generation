@@ -12,7 +12,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from diverse_guide import baseline_regex, diverse_regex
-from paths import get_data_dir_path
+from diverse_guide.evaluation.paths import get_data_dir_path
 
 GRAMMAR_REGEX = {
     "no-bomb": r"(?:[^bB]|[bB][^oO]|[bB][oO][^mM]|[bB][oO][mM][^bB])+",

@@ -1,5 +1,5 @@
 """
-Tests for string_kernel_py.py (NumPy backend) and string_kernel.py (dispatch layer).
+Tests for the WD-shift kernel NumPy backend and dispatch layer.
 
 The NumPy tests always run.
 The C-backend tests are skipped when wd_kernel.so / wd_kernel.dll is not built.
@@ -9,8 +9,8 @@ Numerical correctness is verified against manually computed reference values.
 import numpy as np
 import pytest
 
-import string_kernel as sk_mod
-import string_kernel_py as py_mod
+import diverse_guide.evaluation.string_kernel as sk_mod
+import diverse_guide.evaluation.string_kernel_py as py_mod
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -5,8 +5,8 @@ Generates synthetic strings of varying lengths and counts, then times both
 backends on the pairwise kernel matrix computation.
 
 Usage:
-    PYTHONPATH=src python scripts/benchmark_wd_kernel.py
-    PYTHONPATH=src python scripts/benchmark_wd_kernel.py --n 100 200 500 --d 5 --s 1
+    uv run python scripts/benchmark_wd_kernel.py
+    uv run python scripts/benchmark_wd_kernel.py --n 100 200 500 --d 5 --s 1
 """
 
 import argparse
@@ -68,7 +68,7 @@ def run_benchmark(
     print(f"  {label}  |  n={n}  avg_len={avg_len:.1f}  d={d}  s={s}")
     print(f"{'─' * 60}")
 
-    import string_kernel_py as py_mod
+    import diverse_guide.evaluation.string_kernel_py as py_mod
 
     # Sequential (single-core) numpy — force sequential by setting threshold high
     orig_threshold = py_mod._PARALLEL_THRESHOLD
@@ -112,7 +112,7 @@ def run_benchmark(
         )
         ctypes.CDLL(str(lib_path))  # check availability
 
-        import string_kernel as sk_mod
+        import diverse_guide.evaluation.string_kernel as sk_mod
 
         if sk_mod.STRING_KERNEL_BACKEND == "c":
             c_min, c_med = time_fn(
