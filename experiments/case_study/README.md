@@ -17,21 +17,21 @@ The current observed total coverage percentages from the official workflow are:
 - `email_validator`: `46.16%` vs `59.14%`
 - `webcolors`: `78.04%` vs `83.18%`
 
-Use the repository root [README.md](/home/lxk/projects/diverse-dfa-gen/README.md)
+Use the repository root [README.md](../../README.md)
 for main project setup, and
-[experiments/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/README.md)
+[experiments/README.md](../README.md)
 for the full paper-reproduction map across all tables.
 
 ## Layout
 
 - `data/`: generated samples used as inputs for the experiments
 - `tests/`: experiment harness and regression checks
-- `run_case_study.sh`: Linux and macOS experiment runner
+- `run_case_study.sh`: Linux / macOS experiment runner
 - `run_case_study.ps1`: Windows PowerShell experiment runner
 - `report_case_study.py`: summarizes per-run coverage outputs
-- `fetch_packages.sh`: Linux and macOS package refresh script
+- `fetch_packages.sh`: Linux / macOS package refresh script
 - `fetch_packages.ps1`: Windows PowerShell package refresh script
-- `Makefile`: convenience commands for common Linux and macOS workflows
+- `Makefile`: convenience commands for common Linux / macOS workflows
 - `.coveragerc`: coverage configuration for the copied libraries
 
 The `email_validator/` and `webcolors/` directories are pinned snapshots of
@@ -137,7 +137,7 @@ measured.
 
 ## Convenience Commands
 
-For Linux and macOS:
+For Linux / macOS:
 
 ```bash
 make test

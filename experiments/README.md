@@ -1,19 +1,19 @@
 # Experiments
 
-This directory contains the artifact reproduction scripts for the paper
-results. The scripts are organized by experiment group and mapped to the paper
-tables. Each experiment has a Linux/macOS shell entrypoint and a Windows
+This directory contains artifact reproduction scripts for the paper's
+experiment results. The scripts are organized by experiment group and mapped to
+paper tables. Each experiment has a Linux / macOS shell entrypoint and a Windows
 PowerShell entrypoint.
 
-Use the root [README.md](/home/lxk/projects/diverse-dfa-gen/README.md) for
+Use the root [README.md](../README.md) for
 repository setup and API context. Use
-[case_study/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/case_study/README.md)
-for the isolated Table 9 artifact.
+[case_study/README.md](case_study/README.md)
+for the isolated paper case-study experiment results (Table 9).
 
 ## Before You Start
 
 Complete the repository-level setup in the root
-[README.md](/home/lxk/projects/diverse-dfa-gen/README.md) first.
+[README.md](../README.md) first.
 
 Minimum checklist:
 
@@ -28,27 +28,28 @@ Recommended model defaults used by these scripts:
 - Perplexity model for temperature ablation: `microsoft/Phi-4-mini-instruct`
 
 Shared defaults such as the grammar list and model names live in
-[common.sh](/home/lxk/projects/diverse-dfa-gen/experiments/common.sh) and
-[common.ps1](/home/lxk/projects/diverse-dfa-gen/experiments/common.ps1).
+[common.sh](common.sh) and
+[common.ps1](common.ps1).
 
-## Table Mapping
+## Paper Table Mapping
 
 | Experiment | Linux / macOS | Windows | Paper tables |
 |-----------|----------------|---------|--------------|
 | Sample generation | `1_generation.sh` | `1_generation.ps1` | Produces generated samples used by downstream evaluations |
-| Diversity evaluation | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | Table 1, Table 2, Table 3 |
-| Efficiency evaluation | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | Table 4 |
-| Temperature ablation | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | Table 5, Table 6, Table 7 |
-| Component ablation | `5_component_ablation.sh` | `5_component_ablation.ps1` | Table 8 |
-| Case study | `case_study/` | `case_study/` | Table 9 |
+| Diversity evaluation | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3) |
+| Efficiency evaluation | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | paper's efficiency-evaluation experiment results (Table 4) |
+| Temperature ablation | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | paper's temperature-ablation experiment results (Table 5, Table 6, Table 7) |
+| Component ablation | `5_component_ablation.sh` | `5_component_ablation.ps1` | paper's component-ablation experiment results (Table 8) |
+| Case study | `case_study/` | `case_study/` | paper's case-study experiment results (Table 9) |
 
-Note: Table 5 to Table 7 additionally require `microsoft/Phi-4-mini-instruct`
+Note: Table 5, Table 6, and Table 7 additionally require `microsoft/Phi-4-mini-instruct`
 for perplexity evaluation.
 
 ## Dependencies Between Experiments
 
 - `1_generation.*` should run before `2_diversity_evaluation.*`, because Table
-  1 to Table 3 consume the generated sample files.
+  1, Table 2, and Table 3 (paper's diversity-evaluation experiment results)
+  consume the generated sample files.
 - `3_efficiency_evaluation.*` is independent from the saved generation outputs;
   it measures runtime directly.
 - `4_temperature_ablation.*` is self-contained for the temperature ablation
@@ -76,7 +77,7 @@ Outputs:
 - Evaluation summaries are primarily printed to the console by the current
   scripts.
 - Table 9 outputs are described separately in
-  [case_study/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/case_study/README.md).
+  [case_study/README.md](case_study/README.md).
 
 ## Recommended Reproduction Order
 
@@ -90,7 +91,7 @@ If you want to reproduce all experiment groups:
 6. Run the case study for Table 9.
 
 If you only want one table group, you can usually run just the corresponding
-script pair, except that Table 1 to Table 3 depend on the outputs from
+script pair, except that Table 1, Table 2, and Table 3 depend on the outputs from
 `1_generation.*`.
 
 ## Minimal Sanity Check
@@ -98,11 +99,11 @@ script pair, except that Table 1 to Table 3 depend on the outputs from
 If you want a lightweight artifact check instead of full paper reproduction:
 
 1. Complete the setup steps from the root
-   [README.md](/home/lxk/projects/diverse-dfa-gen/README.md).
+  [README.md](../README.md).
 2. Run `uv run poe test` from the repository root.
 3. Run one small generation command such as `uv run poe gen css-color -n 10 --stdout-only`.
 4. Run the isolated case study from
-   [case_study/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/case_study/README.md).
+  [case_study/README.md](case_study/README.md).
 
 ## Commands
 
@@ -159,28 +160,28 @@ sample files are written under `data/diverse/{model}/` and
 ### `2_diversity_evaluation.*`
 
 - Evaluates both diverse and baseline outputs for all seven grammars.
-- Used for the metrics reported in Table 1, Table 2, and Table 3.
+- Used for the paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3).
 
 ### `3_efficiency_evaluation.*`
 
 - Measures runtime for both diverse and baseline generation.
-- Used for the throughput comparison in Table 4.
+- Used for the paper's efficiency-evaluation experiment results (Table 4).
 
 ### `4_temperature_ablation.*`
 
 - Regenerates samples at temperature `1.5`.
 - Evaluates diversity metrics and perplexity with
   `microsoft/Phi-4-mini-instruct`.
-- Used for Table 5, Table 6, and Table 7.
+- Used for the paper's temperature-ablation experiment results (Table 5, Table 6, Table 7).
 
 ### `5_component_ablation.*`
 
 - Runs ablations for `reward`, `penalty`, and `range_scaling`.
 - The shell version uses `timeout 1800`; the PowerShell version mirrors this
   with a job timeout and also respects `TIMEOUT_SECONDS`.
-- Used for Table 8.
+- Used for the paper's component-ablation experiment results (Table 8).
 
 ### `case_study/`
 
 - Independent artifact for the coverage-based case study.
-- See [case_study/README.md](/home/lxk/projects/diverse-dfa-gen/experiments/case_study/README.md).
+- See [case_study/README.md](case_study/README.md).
