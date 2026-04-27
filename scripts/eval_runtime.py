@@ -4,13 +4,62 @@ This script evaluates structured generation efficiency.
 
 import argparse
 import time
+from pathlib import Path
+from typing import Any
 
 import torch
-from generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from diverse_guide import baseline_regex, diverse_regex
+
+try:
+    from generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX
+except ModuleNotFoundError:
+    from scripts.generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX
+
+try:
+    from repro_results import build_metadata, write_json
+except ModuleNotFoundError:
+    from scripts.repro_results import build_metadata, write_json
+
+
+def build_runtime_result(
+    args,
+    total_token_num: int,
+    total_time: float,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    tokens_per_second = (
+        total_token_num / total_time if total_time > 0 else None
+    )
+    return {
+        "schema_version": 1,
+        "experiment": "runtime",
+        "setting": "baseline" if args.baseline else "diverse",
+        "grammar": args.grammar,
+        "model": args.model,
+        "parameters": {
+            "n": args.n,
+            "max_tokens": args.max_tokens,
+            "temperature": args.temperature,
+            "top_k": args.top_k,
+            "top_p": args.top_p,
+        },
+        "tokens": {
+            "generated": total_token_num,
+            "target": args.n,
+        },
+        "timing": {
+            "seconds": total_time,
+            "tokens_per_second": tokens_per_second,
+        },
+        "metadata": metadata or build_metadata(),
+    }
+
+
+def write_runtime_result(path: str | Path, result: dict[str, Any]) -> None:
+    write_json(path, result)
 
 
 def parse_args():
@@ -43,7 +92,13 @@ def parse_args():
         "--temperature", type=float, default=None, help="The temperature for sampling."
     )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
-    return parser.parse_args()
+    parser.add_argument("--output", type=str, default=None, help="JSON output path.")
+    args = parser.parse_args()
+    if args.n <= 0:
+        parser.error("-n must be positive")
+    if args.max_tokens <= 0:
+        parser.error("--max-tokens must be positive")
+    return args
 
 
 def main():
@@ -89,8 +144,19 @@ def main():
             total_time += elapsed_time
             pbar.update(token_num)
 
-    print(f"Generated {total_token_num} tokens in {total_time:.2f} seconds.")
-    print(f"Tokens per second: {total_token_num / total_time:.2f}.")
+    result = build_runtime_result(args, total_token_num, total_time)
+    print(
+        f"Generated {result['tokens']['generated']} tokens "
+        f"in {result['timing']['seconds']:.2f} seconds."
+    )
+    tokens_per_second = result["timing"]["tokens_per_second"]
+    if tokens_per_second is None:
+        print("Tokens per second: unavailable.")
+    else:
+        print(f"Tokens per second: {tokens_per_second:.2f}.")
+    if args.output:
+        write_runtime_result(args.output, result)
+        print(f"Structured results saved to: {args.output}")
 
 
 if __name__ == "__main__":
