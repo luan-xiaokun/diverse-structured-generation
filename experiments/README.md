@@ -75,8 +75,9 @@ Outputs:
 
 - Generated samples are written under `data/diverse/{model}/` or
   `data/baseline/{model}/`.
-- Evaluation summaries are primarily printed to the console by the current
-  scripts.
+- Evaluation summaries are written as structured JSON files under `results/`.
+- Table-oriented CSV summaries are written under `results/tables/` by
+  `uv run python scripts/collect_results.py`.
 - Table 9 outputs are described separately in
   [case_study/README.md](case_study/README.md).
 
@@ -128,27 +129,39 @@ bash experiments/5_component_ablation.sh
 ./experiments/5_component_ablation.ps1
 ```
 
-## How to Save Results
+## Standard Result Outputs
 
-The current reproduction scripts print most evaluation summaries to the
-console. For paper artifact submission, it is a good idea to save logs for each
-run.
+Evaluation scripts write structured JSON outputs under `results/`. Generated
+samples remain under `data/`.
 
-Linux / macOS example:
-
-```bash
-bash experiments/2_diversity_evaluation.sh | tee diversity_eval.log
+```text
+results/
+  diversity/
+    diverse/<grammar>.json
+    baseline/<grammar>.json
+  runtime/
+    diverse/<grammar>.json
+    baseline/<grammar>.json
+  temperature_ablation/
+    diverse/temperature-1.5/<grammar>.json
+    baseline/temperature-1.5/<grammar>.json
+  component_ablation/
+    default/css-color.json
+    reward/css-color.json
+    penalty/css-color.json
+    range_scaling/css-color.json
+  tables/
+    diversity.csv
+    runtime.csv
+    temperature_ablation.csv
+    component_ablation.csv
 ```
 
-Windows PowerShell example:
+Run `uv run python scripts/collect_results.py` to collect CSV summaries. Windows
+PowerShell uses the same command.
 
-```powershell
-./experiments/2_diversity_evaluation.ps1 | Tee-Object diversity_eval.log
-```
-
-You can apply the same pattern to the other experiment scripts. Generated
-sample files are written under `data/diverse/{model}/` and
-`data/baseline/{model}/`.
+Console logs remain useful for debugging, but JSON and CSV files are the
+primary reproduction artifacts.
 
 ## Per-Experiment Notes
 
