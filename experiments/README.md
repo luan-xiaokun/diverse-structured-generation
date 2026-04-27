@@ -18,9 +18,10 @@ Complete the repository-level setup in the root
 Minimum checklist:
 
 1. Install Python dependencies with `uv sync`.
-2. Build the Rust DFA extension from repository root with `maturin develop --release -m regex_dfa_guide/Cargo.toml` (after activating root `.venv`).
-3. Download the generation model used in the experiments.
-4. Optionally build `wd_kernel` for faster diversity evaluation.
+2. Download the generation model used in the experiments.
+3. Optionally build `wd_kernel` for faster diversity evaluation.
+
+The root `uv sync` command installs the local Rust DFA extension automatically.
 
 Recommended model defaults used by these scripts:
 
@@ -99,11 +100,11 @@ script pair, except that Table 1, Table 2, and Table 3 depend on the outputs fro
 If you want a lightweight artifact check instead of full paper reproduction:
 
 1. Complete the setup steps from the root
-  [README.md](../README.md).
+   [README.md](../README.md).
 2. Run `uv run poe test` from the repository root.
 3. Run one small generation command such as `uv run poe gen css-color -n 10 --stdout-only`.
 4. Run the isolated case study from
-  [case_study/README.md](case_study/README.md).
+   [case_study/README.md](case_study/README.md).
 
 ## Commands
 

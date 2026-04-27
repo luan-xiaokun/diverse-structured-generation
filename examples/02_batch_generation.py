@@ -11,7 +11,7 @@ Key difference from 01_quickstart.py:
   - loop + __call__ →  sequential execution (one sequence at a time)
 
 Run:
-    PYTHONPATH=src python examples/02_batch_generation.py
+    uv run python examples/02_batch_generation.py
 """
 
 import torch

@@ -5,7 +5,7 @@ This example demonstrates how to define a new generation grammar with any
 regular expression, and how the gamma / beta hyperparameters affect diversity.
 
 Run:
-    PYTHONPATH=src python examples/03_custom_regex.py
+    uv run python examples/03_custom_regex.py
 """
 
 import torch

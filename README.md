@@ -1,6 +1,6 @@
 # Diverse Structured Generation
 
-![Python coverage](https://img.shields.io/badge/python%20coverage-96%25-brightgreen)
+![Python coverage](https://img.shields.io/badge/python%20coverage-89%25-yellowgreen)
 ![Rust coverage](https://img.shields.io/badge/rust%20coverage-97.22%25-brightgreen)
 
 This repository is the artifact for the paper:
@@ -461,8 +461,8 @@ The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tes
 
 Current test and coverage status (latest local run):
 
-- Python test suite: `140 passed`
-- Python core coverage (`diverse_guide`): `96%`
+- Python test suite: `142 passed`
+- Python package coverage (`diverse_guide`): `89%`
 - Rust unit tests (`regex_dfa_guide`): `11 passed`
 - Rust coverage: `Regions 96.37%`, `Lines 97.22%`, `Functions Executed 90.28%`
 
@@ -513,7 +513,6 @@ regex_dfa_guide/          # Rust extension package (DFA construction + counters)
     python_bindings/
 
 native/wd_kernel/         # Native C/OpenMP WD-shift kernel source
-build/native/wd_kernel/   # Built native artifacts (.so/.dylib/.dll)
 
 scripts/
   generate_re.py          # Generate constrained samples
@@ -525,11 +524,9 @@ scripts/
 examples/                 # Standalone usage examples
 tests/                    # Pytest suite
 experiments/              # Paper reproduction scripts and case study
-archive/deprecated/       # Archived earlier implementations and guides
 
 Dockerfile                # Main container build
-Dockerfile.cpu            # CPU-targeted container variant
-Dockerfile.gpu            # GPU-targeted container variant
+.dockerignore             # Docker build-context exclusions
 ```
 
 ---

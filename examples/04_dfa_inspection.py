@@ -10,7 +10,7 @@ This is useful for understanding the DFA structure and debugging regex patterns.
 The DFA can also be pickled (via bincode serialization) for caching.
 
 Run:
-    PYTHONPATH=src python examples/04_dfa_inspection.py
+    uv run python examples/04_dfa_inspection.py
 """
 
 import pickle

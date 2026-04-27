@@ -6,10 +6,10 @@ regular expression using a locally stored HuggingFace model.
 
 Requires:
     - A model downloaded by HuggingFace (see README for download instructions)
-    - regex_dfa_guide built with: cd regex_dfa_guide && maturin develop --release
+    - Project dependencies installed with: uv sync
 
 Run:
-    PYTHONPATH=src python examples/01_quickstart.py
+    uv run python examples/01_quickstart.py
 """
 
 import torch

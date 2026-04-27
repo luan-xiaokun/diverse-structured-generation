@@ -4,10 +4,10 @@ This script compiles the C/OpenMP backend under ``native/wd_kernel`` and
 stores artifacts under ``build/native/wd_kernel``.
 
 Usage:
-    python scripts/build_wd_kernel.py
-    python scripts/build_wd_kernel.py --clean
-    python scripts/build_wd_kernel.py --check
-    python scripts/build_wd_kernel.py --copy-to-package
+    uv run python scripts/build_wd_kernel.py
+    uv run python scripts/build_wd_kernel.py --clean
+    uv run python scripts/build_wd_kernel.py --check
+    uv run python scripts/build_wd_kernel.py --copy-to-package
 """
 
 from __future__ import annotations
