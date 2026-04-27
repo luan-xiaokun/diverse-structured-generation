@@ -72,7 +72,7 @@ help = "Run Rust coverage for regex_dfa_guide (requires cargo-llvm-cov)"
 [tool.pytest]
 minversion = "9.0"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 addopts = [
   "--cov=diverse_guide",
   "--cov-report=term-missing",
