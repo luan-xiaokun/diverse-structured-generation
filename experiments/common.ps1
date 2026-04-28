@@ -6,6 +6,7 @@ Set-Location $RepoRoot
 
 $script:DefaultModel = "Qwen/Qwen2.5-1.5B-Instruct"
 $script:DefaultPplModel = "microsoft/Phi-4-mini-instruct"
+$script:DefaultSeed = $env:SEED
 $script:Grammars = @("email", "css-color", "json", "no-bomb", "ipv4", "ipv6", "threefold")
 
 function Invoke-Poe {
@@ -24,6 +25,13 @@ function Get-GrammarExtraArgs {
         "json" { return @("--max-tokens", "54") }
         default { return @() }
     }
+}
+
+function Get-SeedArgs {
+    if ($script:DefaultSeed) {
+        return @("--seed", $script:DefaultSeed)
+    }
+    return @()
 }
 
 function Get-ResultSettingDir {
@@ -69,6 +77,7 @@ function Invoke-GenerationSuite {
     foreach ($grammar in $script:Grammars) {
         $cmd = @("gen", $grammar, "--model", $script:DefaultModel, "-n", "1000")
         $cmd += Get-GrammarExtraArgs -Grammar $grammar
+        $cmd += Get-SeedArgs
         $cmd += $ExtraArgs
         if ($Baseline) {
             $cmd += "--baseline"

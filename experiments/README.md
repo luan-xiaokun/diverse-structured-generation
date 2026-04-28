@@ -129,6 +129,27 @@ bash experiments/5_component_ablation.sh
 ./experiments/5_component_ablation.ps1
 ```
 
+Generation scripts do not fix a seed by default. To seed Python, NumPy, and
+PyTorch generation through every generation command in these scripts, set
+`SEED`:
+
+```bash
+SEED=42 bash experiments/1_generation.sh
+SEED=42 bash experiments/4_temperature_ablation.sh
+SEED=42 bash experiments/5_component_ablation.sh
+```
+
+Windows PowerShell:
+
+```powershell
+$env:SEED = "42"
+./experiments/1_generation.ps1
+```
+
+The seed improves same-environment repeatability, but exact bit-for-bit outputs
+can still vary across model revisions, PyTorch/Transformers versions, hardware,
+and CUDA settings.
+
 ## Standard Result Outputs
 
 Evaluation scripts write structured JSON outputs under `results/`. Generated

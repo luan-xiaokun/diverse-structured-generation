@@ -6,10 +6,16 @@ ABLATION_COMPONENTS=("reward" "penalty" "range_scaling")
 
 run_generation_with_timeout() {
     local component=$1
+    local seed_cli_args=()
+    while IFS= read -r arg; do
+        [[ -n "$arg" ]] && seed_cli_args+=("$arg")
+    done < <(seed_args)
+
     timeout "$TIMEOUT_SECONDS" uv run poe gen css-color \
         --model "$DEFAULT_MODEL" \
         -n 1000 \
-        --ablation-component "$component"
+        --ablation-component "$component" \
+        "${seed_cli_args[@]}"
 }
 
 # generate samples with ablation of reward, penalty, and range scaling components

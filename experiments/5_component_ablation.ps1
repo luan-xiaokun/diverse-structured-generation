@@ -7,10 +7,14 @@ function Invoke-GenerationWithTimeout {
     param([string]$Component)
 
     $job = Start-Job -ScriptBlock {
-        param($RepoRoot, $Model, $AblationComponent)
+        param($RepoRoot, $Model, $AblationComponent, $Seed)
         Set-Location $RepoRoot
-        & uv run poe gen css-color --model $Model -n 1000 --ablation-component $AblationComponent
-    } -ArgumentList $RepoRoot, $script:DefaultModel, $Component
+        $seedArgs = @()
+        if ($Seed) {
+            $seedArgs = @("--seed", $Seed)
+        }
+        & uv run poe gen css-color --model $Model -n 1000 --ablation-component $AblationComponent @seedArgs
+    } -ArgumentList $RepoRoot, $script:DefaultModel, $Component, $script:DefaultSeed
 
     if (-not (Wait-Job $job -Timeout $timeoutSeconds)) {
         Stop-Job $job

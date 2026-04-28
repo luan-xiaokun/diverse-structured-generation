@@ -6,6 +6,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
 DEFAULT_MODEL="Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_PPL_MODEL="microsoft/Phi-4-mini-instruct"
+DEFAULT_SEED="${SEED:-}"
 GRAMMARS=("email" "css-color" "json" "no-bomb" "ipv4" "ipv6" "threefold")
 
 cd "$REPO_ROOT"
@@ -21,6 +22,12 @@ grammar_extra_args() {
             printf '%s\n' "--max-tokens" "54"
             ;;
     esac
+}
+
+seed_args() {
+    if [[ -n "$DEFAULT_SEED" ]]; then
+        printf '%s\n' "--seed" "$DEFAULT_SEED"
+    fi
 }
 
 result_setting_dir() {
@@ -64,6 +71,9 @@ run_generation_suite() {
         while IFS= read -r arg; do
             [[ -n "$arg" ]] && cmd+=("$arg")
         done < <(grammar_extra_args "$grammar")
+        while IFS= read -r arg; do
+            [[ -n "$arg" ]] && cmd+=("$arg")
+        done < <(seed_args)
         cmd+=("${extra_args[@]}")
         if [[ "$baseline_flag" == "true" ]]; then
             cmd+=("--baseline")
