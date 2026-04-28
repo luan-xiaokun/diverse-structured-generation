@@ -54,6 +54,10 @@ REQUIRED_INPUTS = [
     *METRIC_EXPERIMENTS,
     "runtime",
 ]
+COLLECTOR_EXPERIMENTS = [
+    "all",
+    *REQUIRED_INPUTS,
+]
 
 
 class MissingResultInputsError(Exception):
@@ -142,9 +146,9 @@ def _json_paths(experiment_dir: Path) -> list[Path]:
     return paths
 
 
-def _validate_required_inputs(results_dir: Path) -> None:
+def _validate_required_inputs(results_dir: Path, input_names: list[str]) -> None:
     missing_inputs = []
-    for input_name in REQUIRED_INPUTS:
+    for input_name in input_names:
         input_path = results_dir / input_name
         if not input_path.exists():
             missing_inputs.append((input_path, "missing directory"))
@@ -174,9 +178,19 @@ def collect_runtime_table(results_dir: str | Path) -> Path:
     return output_path
 
 
+def collect_experiment(results_dir: str | Path, experiment: str) -> Path:
+    results_dir = Path(results_dir)
+    _validate_required_inputs(results_dir, [experiment])
+    if experiment == "runtime":
+        return collect_runtime_table(results_dir)
+    if experiment in METRIC_EXPERIMENTS:
+        return collect_metric_table(results_dir, experiment)
+    raise ValueError(f"Unknown experiment: {experiment}")
+
+
 def collect_all(results_dir: str | Path = "results") -> list[Path]:
     results_dir = Path(results_dir)
-    _validate_required_inputs(results_dir)
+    _validate_required_inputs(results_dir, REQUIRED_INPUTS)
 
     output_paths = [
         collect_metric_table(results_dir, experiment)
@@ -196,13 +210,22 @@ def parse_args():
         default=Path("results"),
         help="Directory containing structured JSON result files.",
     )
+    parser.add_argument(
+        "--experiment",
+        choices=COLLECTOR_EXPERIMENTS,
+        default="all",
+        help="Experiment group to collect. Use 'all' to require every group.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     try:
-        collect_all(args.results_dir)
+        if args.experiment == "all":
+            collect_all(args.results_dir)
+        else:
+            collect_experiment(args.results_dir, args.experiment)
     except MissingResultInputsError as exc:
         print(exc, file=sys.stderr)
         raise SystemExit(1) from None

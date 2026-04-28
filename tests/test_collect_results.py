@@ -4,7 +4,12 @@ import sys
 
 import pytest
 
-from scripts.collect_results import MissingResultInputsError, collect_all, main
+from scripts.collect_results import (
+    MissingResultInputsError,
+    collect_all,
+    collect_experiment,
+    main,
+)
 
 
 def _write_json(path, data):
@@ -138,3 +143,45 @@ def test_main_prints_clean_preflight_error_without_traceback(
     assert "(missing directory)" in captured.err
     assert "Traceback" not in captured.err
     assert not (results_dir / "tables").exists()
+
+
+def test_collect_single_experiment_writes_only_requested_table(tmp_path):
+    results_dir = tmp_path / "results"
+    _write_json(
+        results_dir / "diversity" / "diverse" / "css-color.json",
+        _metrics_result("diversity", "diverse", "css-color"),
+    )
+
+    output_path = collect_experiment(results_dir, "diversity")
+
+    assert output_path == results_dir / "tables" / "diversity.csv"
+    assert output_path.exists()
+    assert not (results_dir / "tables" / "runtime.csv").exists()
+
+
+def test_main_collects_single_experiment_without_requiring_all_groups(
+    tmp_path, monkeypatch, capsys
+):
+    results_dir = tmp_path / "results"
+    _write_json(
+        results_dir / "runtime" / "baseline" / "css-color.json",
+        _runtime_result("baseline", "css-color"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "collect_results.py",
+            "--results-dir",
+            str(results_dir),
+            "--experiment",
+            "runtime",
+        ],
+    )
+
+    main()
+
+    captured = capsys.readouterr()
+    assert "CSV tables written to:" in captured.out
+    assert captured.err == ""
+    assert (results_dir / "tables" / "runtime.csv").exists()

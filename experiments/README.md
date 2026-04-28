@@ -157,8 +157,16 @@ results/
     component_ablation.csv
 ```
 
-Run `uv run python scripts/collect_results.py` to collect CSV summaries. Windows
-PowerShell uses the same command.
+Run `uv run python scripts/collect_results.py` after all experiment groups have
+finished to collect every CSV summary. If you only reproduced one group, collect
+that table with `--experiment`, for example:
+
+```bash
+uv run python scripts/collect_results.py --experiment diversity
+uv run python scripts/collect_results.py --experiment runtime
+```
+
+Windows PowerShell uses the same commands.
 
 Console logs remain useful for debugging, but JSON and CSV files are the
 primary reproduction artifacts.

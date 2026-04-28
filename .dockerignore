@@ -19,6 +19,7 @@ coverage.xml
 archive/
 
 data/
+results/
 build/
 dist/
 regex_dfa_guide/target/
