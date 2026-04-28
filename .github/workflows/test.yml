@@ -44,3 +44,69 @@ jobs:
 
       - name: Lint
         run: uv run poe lint
+
+  powershell:
+    name: PowerShell experiment scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Get-ChildItem -Path experiments -Recurse -Filter *.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed for $($_.FullName)"
+            }
+          }
+
+      - name: Check PowerShell seed helpers
+        shell: pwsh
+        env:
+          SEED: "42"
+        run: |
+          $ErrorActionPreference = "Stop"
+          . ./experiments/common.ps1
+
+          $seedArgs = Get-SeedArgs
+          if (($seedArgs -join " ") -ne "--seed 42") {
+            throw "Expected '--seed 42', got '$($seedArgs -join " ")'"
+          }
+
+          $extraArgs = Get-GrammarExtraArgs -Grammar json
+          if (($extraArgs -join " ") -ne "--max-tokens 54") {
+            throw "Unexpected json grammar args: '$($extraArgs -join " ")'"
+          }
+
+          $metricPath = Get-MetricResultPath `
+            -Experiment temperature_ablation `
+            -Grammar css-color `
+            -ResultSuffix temperature-1.5
+          if ($metricPath -ne "results/temperature_ablation/diverse/temperature-1.5/css-color.json") {
+            throw "Unexpected metric path: '$metricPath'"
+          }
+
+          $baselineMetricPath = Get-MetricResultPath `
+            -Experiment diversity `
+            -Baseline `
+            -Grammar email
+          if ($baselineMetricPath -ne "results/diversity/baseline/email.json") {
+            throw "Unexpected baseline metric path: '$baselineMetricPath'"
+          }
+
+          $runtimePath = Get-RuntimeResultPath `
+            -Baseline `
+            -Grammar ipv4
+          if ($runtimePath -ne "results/runtime/baseline/ipv4.json") {
+            throw "Unexpected runtime path: '$runtimePath'"
+          }
