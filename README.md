@@ -461,7 +461,7 @@ The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tes
 
 Current test and coverage status (latest local run):
 
-- Python test suite: `142 passed`
+- Python test suite: `166 passed`
 - Python package coverage (`diverse_guide`): `89%`
 - Rust unit tests (`regex_dfa_guide`): `11 passed`
 - Rust coverage: `Regions 96.37%`, `Lines 97.22%`, `Functions Executed 90.28%`

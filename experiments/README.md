@@ -150,6 +150,41 @@ The seed improves same-environment repeatability, but exact bit-for-bit outputs
 can still vary across model revisions, PyTorch/Transformers versions, hardware,
 and CUDA settings.
 
+## PowerShell Script Check
+
+The CI parses all PowerShell experiment scripts and checks the shared helper
+functions without loading models or running generation. To run the same kind of
+local check from the repository root:
+
+```powershell
+$ErrorActionPreference = "Stop"
+
+Get-ChildItem -Path experiments -Recurse -Filter *.ps1 | ForEach-Object {
+  $tokens = $null
+  $errors = $null
+  [System.Management.Automation.Language.Parser]::ParseFile(
+    $_.FullName,
+    [ref]$tokens,
+    [ref]$errors
+  ) | Out-Null
+  if ($errors.Count -gt 0) {
+    $errors | ForEach-Object { Write-Error $_.Message }
+    throw "PowerShell parse failed for $($_.FullName)"
+  }
+}
+
+$env:SEED = "42"
+. ./experiments/common.ps1
+
+if (((Get-SeedArgs) -join " ") -ne "--seed 42") {
+  throw "Unexpected seed args"
+}
+
+if (((Get-GrammarExtraArgs -Grammar json) -join " ") -ne "--max-tokens 54") {
+  throw "Unexpected json grammar args"
+}
+```
+
 ## Standard Result Outputs
 
 Evaluation scripts write structured JSON outputs under `results/`. Generated
