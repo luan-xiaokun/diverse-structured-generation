@@ -4,10 +4,12 @@ This script generates text samples from a regex using a language model.
 
 import argparse
 import json
+import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -45,6 +47,7 @@ class GeneratedData:
     top_k: int | None
     top_p: float | None
     temperature: float | None
+    seed: int | None
     samples: list[str]
 
     def to_dict(self):
@@ -57,6 +60,7 @@ class GeneratedData:
             "top_k": self.top_k,
             "top_p": self.top_p,
             "temperature": self.temperature,
+            "seed": self.seed,
             "samples": self.samples,
         }
 
@@ -71,8 +75,19 @@ class GeneratedData:
             top_k=data["top_k"],
             top_p=data["top_p"],
             temperature=data["temperature"],
+            seed=data.get("seed"),
             samples=data["samples"],
         )
+
+
+def set_generation_seed(seed: int | None) -> None:
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def parse_args():
@@ -110,6 +125,12 @@ def parse_args():
     )
     parser.add_argument(
         "--temperature", type=float, default=None, help="The temperature for sampling."
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Seed Python, NumPy, and PyTorch before generation.",
     )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
     parser.add_argument(
@@ -153,6 +174,7 @@ def main():
     print(f"Regex: {regex}\nPrompt: {prompt}")
 
     pattern = re.compile("^(?:" + regex + ")$")
+    set_generation_seed(args.seed)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
@@ -188,6 +210,7 @@ def main():
         args.top_k,
         args.top_p,
         args.temperature,
+        args.seed,
         [],
     )
     json_path: Path | None = None
