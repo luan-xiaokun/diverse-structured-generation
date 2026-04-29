@@ -5,6 +5,10 @@ experiment results. The scripts are organized by experiment group and mapped to
 paper tables. Each experiment has a Linux / macOS shell entrypoint and a Windows
 PowerShell entrypoint.
 
+For the reviewer-facing reproducibility protocol, start with the root
+[REPRODUCIBILITY.md](../REPRODUCIBILITY.md). This file is the detailed command
+reference for the experiment scripts.
+
 Use the root [README.md](../README.md) for
 repository setup and API context. Use
 [case_study/README.md](case_study/README.md)

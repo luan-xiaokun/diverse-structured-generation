@@ -406,6 +406,9 @@ Use `--output` to override the output path, or `--stdout-only` to skip writing J
 
 ### Reproducing paper results
 
+For the reviewer-facing reproducibility protocol, start with
+[REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+
 Reproduction scripts live in [experiments/README.md](experiments/README.md).
 The document maps scripts to paper tables and provides Linux / macOS and Windows entrypoints.
 
