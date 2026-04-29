@@ -532,6 +532,9 @@ Dockerfile                # Main container build
 .dockerignore             # Docker build-context exclusions
 ```
 
+For implementation architecture, see [docs/architecture.md](docs/architecture.md).
+For contributor and developer workflows, see [docs/developing.md](docs/developing.md).
+
 ---
 
 ## Acknowledgements
