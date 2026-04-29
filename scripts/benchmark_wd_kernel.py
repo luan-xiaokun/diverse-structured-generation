@@ -38,12 +38,6 @@ def css_color_strings(n: int, seed: int = 42) -> list[str]:
     return results
 
 
-def ipv4_strings(n: int, seed: int = 42) -> list[str]:
-    """Simulate IPv4 address outputs (7-15 chars)."""
-    rng = random.Random(seed)
-    return [".".join(str(rng.randint(0, 255)) for _ in range(4)) for _ in range(n)]
-
-
 def time_fn(fn, *args, repeat: int = 3) -> tuple[float, float]:
     """Return (min, median) elapsed seconds over *repeat* calls."""
     times = []
@@ -162,7 +156,6 @@ def main():
         run_benchmark(
             "CSS colors   ", css_color_strings(n), args.d, args.s, args.repeat
         )
-        run_benchmark("IPv4 addrs   ", ipv4_strings(n), args.d, args.s, args.repeat)
         run_benchmark(
             "Random 5-30  ", random_strings(n, 5, 30), args.d, args.s, args.repeat
         )

@@ -329,16 +329,16 @@ model = AutoModelForCausalLM.from_pretrained(
 ).to(device)
 tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
 
-# regex for IPv4 addresses
-ipv4_regex = r"(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+# regex for six-digit hex CSS colors
+css_color_regex = r"#[0-9a-fA-F]{6}"
 
-generator = diverse_regex(model, tokenizer, ipv4_regex)
+generator = diverse_regex(model, tokenizer, css_color_regex)
 
 # generate a single sample
-sample = generator("Give me an IPv4 address.", max_tokens=20)
+sample = generator("Give me a CSS color code.", max_tokens=20)
 
 # generate a diverse batch (updates path counters between samples)
-samples = generator.generate_batch("Give me an IPv4 address.", n=10, max_tokens=20)
+samples = generator.generate_batch("Give me a CSS color code.", n=10, max_tokens=20)
 ```
 
 See [examples/](examples/) for more complete usage patterns.
@@ -376,7 +376,7 @@ Returns a `StatefulSequenceGeneratorAdapter` with `gamma=0`
 ## Running Experiments
 
 ```bash
-# Generate samples for a grammar (grammars: no-bomb, threefold, ipv4, ipv6, email, css-color, json)
+# Generate samples for a grammar (grammars: no-bomb, email, css-color, json)
 uv run poe gen css-color
 uv run poe gen css-color --baseline        # baseline (non-diverse)
 uv run poe gen css-color --model Qwen/Qwen2.5-0.5B-Instruct -n 100

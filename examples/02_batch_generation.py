@@ -21,12 +21,15 @@ from diverse_guide import baseline_regex, diverse_regex
 
 MODEL_PATH = "Qwen/Qwen2.5-1.5B-Instruct"
 
-IPV4_REGEX = (
-    r"(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}"
-    r"(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$"
+CSS_COLOR_REGEX = (
+    r"#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})"
+    r"|rgba?\(\s*(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\s*,"
+    r"\s*(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\s*,"
+    r"\s*(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\s*"
+    r"(?:,\s*(?:0(?:\.\d+)?|1(?:\.0+)?)\s*)?\)"
 )
 
-PROMPT = "Give me an IPv4 address."
+PROMPT = "Give me a CSS color code."
 N = 20
 MAX_TOKENS = 20
 
@@ -38,8 +41,8 @@ def main():
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
-    diverse_gen = diverse_regex(model, tokenizer, IPV4_REGEX)
-    baseline_gen = baseline_regex(model, tokenizer, IPV4_REGEX)
+    diverse_gen = diverse_regex(model, tokenizer, CSS_COLOR_REGEX)
+    baseline_gen = baseline_regex(model, tokenizer, CSS_COLOR_REGEX)
 
     print("=== Diverse batch ===")
     diverse_samples = diverse_gen.generate_batch(PROMPT, n=N, max_tokens=MAX_TOKENS)

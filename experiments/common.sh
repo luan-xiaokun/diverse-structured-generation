@@ -7,7 +7,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_MODEL="Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_PPL_MODEL="microsoft/Phi-4-mini-instruct"
 DEFAULT_SEED="${SEED:-}"
-GRAMMARS=("email" "css-color" "json" "no-bomb" "ipv4" "ipv6" "threefold")
+GRAMMARS=("email" "css-color" "json" "no-bomb")
 
 cd "$REPO_ROOT"
 

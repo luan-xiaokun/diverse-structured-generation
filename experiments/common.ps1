@@ -7,7 +7,7 @@ Set-Location $RepoRoot
 $script:DefaultModel = "Qwen/Qwen2.5-1.5B-Instruct"
 $script:DefaultPplModel = "microsoft/Phi-4-mini-instruct"
 $script:DefaultSeed = $env:SEED
-$script:Grammars = @("email", "css-color", "json", "no-bomb", "ipv4", "ipv6", "threefold")
+$script:Grammars = @("email", "css-color", "json", "no-bomb")
 
 function Invoke-Poe {
     param(
