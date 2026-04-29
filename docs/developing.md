@@ -12,6 +12,10 @@ uv sync --group dev
 source .venv/bin/activate
 ```
 
+The Rust extension declares `rust-version = "1.71.1"` in
+`regex_dfa_guide/Cargo.toml`. The current local verification environment uses
+`rustc 1.94.1` and `cargo 1.94.1`.
+
 The root project declares `regex-dfa-guide` as a local path dependency, so
 `uv sync` builds and installs the Rust extension automatically.
 

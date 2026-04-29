@@ -120,7 +120,9 @@ source .venv/bin/activate          # Linux / macOS
 
 #### Step 2 - Rust DFA extension
 
-Requires **Rust >= 1.75** (install via [rustup](https://rustup.rs/)).
+Requires **Rust >= 1.71.1**, matching `regex_dfa_guide/Cargo.toml`
+(install via [rustup](https://rustup.rs/)). The current local verification
+environment uses `rustc 1.94.1` and `cargo 1.94.1`.
 
 If you use the recommended `uv sync` setup above, no separate command is needed:
 `regex-dfa-guide` is installed from the local `regex_dfa_guide/` directory.
