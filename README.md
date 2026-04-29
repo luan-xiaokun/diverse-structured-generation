@@ -6,7 +6,7 @@
 This repository is the artifact for the paper:
 
 > **Automata-Based Steering of Large Language Models for Diverse Structured Generation**
-> Xiaokun Luan, Zemin Wei, Yihao Zhang, Meng Sun
+> Xiaokun Luan, Zeming Wei, Yihao Zhang, Meng Sun
 > 26th International Conference on Formal Engineering Methods (ICFEM 2025)
 
 It implements a diversity-enhancing method for LLM structured generation constrained by regular expressions.

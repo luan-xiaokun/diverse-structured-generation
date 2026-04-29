@@ -1,0 +1,67 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated ICFEM paper."
+type: software
+title: "Diverse Structured Generation"
+authors:
+  - family-names: Luan
+    given-names: Xiaokun
+    orcid: "https://orcid.org/0000-0002-5878-6486"
+  - family-names: Wei
+    given-names: Zeming
+    orcid: "https://orcid.org/0009-0008-2953-0749"
+  - family-names: Zhang
+    given-names: Yihao
+    orcid: "https://orcid.org/0009-0002-0284-1367"
+  - family-names: Sun
+    given-names: Meng
+    orcid: "https://orcid.org/0000-0001-6550-7396"
+abstract: "A diversity-enhancing method for large-language-model structured generation constrained by regular expressions."
+keywords:
+  - large language models
+  - structured generation
+  - regular expressions
+  - automata
+  - diversity
+license: MIT
+version: 0.1.0
+repository-code: "https://github.com/luan-xiaokun/diverse-structured-generation"
+url: "https://github.com/luan-xiaokun/diverse-structured-generation"
+preferred-citation:
+  type: conference-paper
+  title: "Automata-Based Steering of Large Language Models for Diverse Structured Generation"
+  authors:
+    - family-names: Luan
+      given-names: Xiaokun
+      orcid: "https://orcid.org/0000-0002-5878-6486"
+    - family-names: Wei
+      given-names: Zeming
+      orcid: "https://orcid.org/0009-0008-2953-0749"
+    - family-names: Zhang
+      given-names: Yihao
+      orcid: "https://orcid.org/0009-0002-0284-1367"
+    - family-names: Sun
+      given-names: Meng
+      orcid: "https://orcid.org/0000-0001-6550-7396"
+  editors:
+    - family-names: Andre
+      given-names: Etienne
+    - family-names: Wang
+      given-names: Jingyi
+    - family-names: Zhan
+      given-names: Naijun
+  collection-title: "Formal Methods and Software Engineering"
+  collection-type: proceedings
+  conference:
+    name: "26th International Conference on Formal Engineering Methods"
+    location: "Hangzhou, China"
+    date-start: "2025-11-10"
+    date-end: "2025-11-13"
+  publisher:
+    name: "Springer"
+    location: "Singapore"
+  year: 2026
+  date-published: "2025-11-11"
+  volume: 16229
+  start: 22
+  end: 41
+  doi: "10.1007/978-981-95-4213-0_2"
