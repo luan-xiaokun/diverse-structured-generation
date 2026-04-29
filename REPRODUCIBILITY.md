@@ -44,15 +44,17 @@ Recommended setup:
 
 Default models used by the reproduction scripts:
 
-| Purpose | Model |
-| --- | --- |
-| Generation | `Qwen/Qwen2.5-1.5B-Instruct` |
-| Perplexity in temperature ablation | `microsoft/Phi-4-mini-instruct` |
+| Purpose | Model | Recommended Hugging Face revision for OSP reproduction |
+| --- | --- | --- |
+| Generation | `Qwen/Qwen2.5-1.5B-Instruct` | `989aa7980e4cf806f80c7fef2b1adb7bc71aa306` |
+| Perplexity in temperature ablation | `microsoft/Phi-4-mini-instruct` | `cfbefacb99257ffa30c83adab238a50856ac3083` |
 
-The model files are resolved by `transformers.from_pretrained`. For archival
-reproduction, record the exact Hugging Face revisions available in your local
-cache or execution environment. Model-revision pinning is tracked separately in
-the OSP preparation checklist.
+The scripts currently pass model ids to `transformers.from_pretrained` without
+an explicit `revision` argument. The revisions above are the local Hugging Face
+cache snapshots recorded while preparing this OSP artifact. They should be used
+as the reference model revisions for archival reproduction notes. If you
+reproduce with newer model snapshots, record the exact revisions with the
+resulting `results/` artifacts.
 
 ## Quick Checks
 
