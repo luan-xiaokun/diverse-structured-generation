@@ -34,6 +34,7 @@ METRIC_FIELDS = [
 RUNTIME_FIELDS = [
     "experiment",
     "setting",
+    "baseline_backend",
     "grammar",
     "model",
     "target_tokens",
@@ -42,6 +43,7 @@ RUNTIME_FIELDS = [
     "tokens_per_second",
     "max_tokens",
     "temperature",
+    "seed",
 ]
 
 METRIC_EXPERIMENTS = [
@@ -115,6 +117,7 @@ def runtime_row(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "experiment": data["experiment"],
         "setting": data["setting"],
+        "baseline_backend": parameters.get("baseline_backend", "internal"),
         "grammar": data["grammar"],
         "model": data["model"],
         "target_tokens": tokens["target"],
@@ -123,12 +126,11 @@ def runtime_row(data: dict[str, Any]) -> dict[str, Any]:
         "tokens_per_second": timing["tokens_per_second"],
         "max_tokens": parameters["max_tokens"],
         "temperature": parameters.get("temperature"),
+        "seed": parameters.get("seed"),
     }
 
 
-def write_csv(
-    path: str | Path, rows: list[dict[str, Any]], fields: list[str]
-) -> None:
+def write_csv(path: str | Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as f:

@@ -3,4 +3,4 @@
 from .regex_dfa_guide_rs import DiverseGuideDFA
 
 __all__ = ["DiverseGuideDFA"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"

@@ -8,6 +8,7 @@ from diverse_guide import guide_rust as gr
 from diverse_guide.guide_rust import (
     DiverseRegexGuide,
     DiverseRegexLogitsProcessor,
+    RegexMaskLogitsProcessor,
     StatefulSequenceGeneratorAdapter,
 )
 
@@ -74,20 +75,23 @@ def test_guide_get_next_state(mock_tokenizer):
 def test_reset_clears_guide_states(mock_tokenizer):
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
     # Manually pollute the cache
-    proc._guide_states[(1, 2, 3)] = 42
+    proc._guide_states_by_row = [42]
+    proc._processed_lengths_by_row = [3]
     proc._seq_start_idx = 5
 
     proc.reset()
 
     assert proc._seq_start_idx is None
-    assert proc._guide_states == {(): proc.guide.initial_state}
+    assert proc._guide_states_by_row is None
+    assert proc._processed_lengths_by_row is None
 
 
 def test_reset_restores_initial_state_only(mock_tokenizer):
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
     proc.reset()
-    assert list(proc._guide_states.keys()) == [()]
-    assert proc._guide_states[()] == proc.guide.initial_state
+    proc._ensure_rows(1)
+    assert proc._guide_states_by_row == [proc.guide.initial_state]
+    assert proc._processed_lengths_by_row == [0]
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +133,8 @@ def test_masking_eos_at_final_state(mock_tokenizer):
     # and is at the final state
     final_state = proc.dfa.get_next_token_state(initial, 10)
     proc._seq_start_idx = 0
-    proc._guide_states[(10,)] = final_state
+    proc._guide_states_by_row = [final_state]
+    proc._processed_lengths_by_row = [1]
 
     # input_ids: shape (1, 1), representing the token 10 ('a') was already generated
     input_ids = torch.tensor([[10]], dtype=torch.long)
@@ -161,15 +166,16 @@ def test_guide_states_populated_after_call(mock_tokenizer):
     scores = _make_scores()
 
     proc(input_ids, scores)
-    # The empty-prefix key should already exist
-    assert () in proc._guide_states
+    assert proc._guide_states_by_row == [proc.guide.initial_state]
+    assert proc._processed_lengths_by_row == [0]
 
 
 def test_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
     """Processor should not crash if a finished row is followed by a non-DFA token."""
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
     proc._seq_start_idx = 0
-    proc._guide_states[(10,)] = -1  # terminal sentinel after one token
+    proc._guide_states_by_row = [-1]  # terminal sentinel after one token
+    proc._processed_lengths_by_row = [1]
 
     input_ids = torch.tensor([[10, 77]], dtype=torch.long)
     scores = _make_scores()
@@ -196,6 +202,12 @@ def test_gamma_zero_no_adjustment(mock_tokenizer):
     # Allowed tokens should still be 1.0 (no adjustment since gamma=0)
     assert scores[0, 10].item() == pytest.approx(1.0)
     assert scores[0, 20].item() == pytest.approx(1.0)
+
+
+def test_baseline_regex_uses_mask_only_processor(mock_tokenizer):
+    generator = gr.baseline_regex(object(), mock_tokenizer, r"a+")
+
+    assert isinstance(generator.logits_processor, RegexMaskLogitsProcessor)
 
 
 # ---------------------------------------------------------------------------
@@ -375,20 +387,22 @@ def test_generate_batch_resets_local_counter(mock_tokenizer):
 
 
 def test_generate_batch_resets_guide_states(mock_tokenizer):
-    """generate_batch calls reset() which clears _guide_states before generation."""
+    """generate_batch calls reset() which clears stale row-state cache."""
     n = 2
     tok = _BatchTokenizerMock(mock_tokenizer)
     proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     # Pollute state
-    proc._guide_states[(9, 9, 9)] = 42
+    proc._guide_states_by_row = [42]
+    proc._processed_lengths_by_row = [3]
     proc._seq_start_idx = 100
 
     adapter.generate_batch("prompt", n=n, max_tokens=1)
 
-    # After the batch the stale entry (9,9,9) must be gone
-    assert (9, 9, 9) not in proc._guide_states
+    assert proc._seq_start_idx == PROMPT_LEN
+    assert proc._guide_states_by_row is not None
+    assert 42 not in proc._guide_states_by_row
 
 
 class _CoverageTokenizer:
@@ -566,6 +580,8 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     assert adapter.generation_defaults["pad_token_id"] == 0
     assert isinstance(adapter("prompt", max_tokens=2), str)
     adapter.update_generated_content("a")
+    baseline = gr.baseline_regex(model, tok, "[ab]")
+    assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
 
     a1 = gr.diverse_regex(model, tok, "[ab]", ablation_component="reward")
     a2 = gr.diverse_regex(model, tok, "[ab]", ablation_component="penalty")

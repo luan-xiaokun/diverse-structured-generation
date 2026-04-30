@@ -355,8 +355,9 @@ Returns a `StatefulSequenceGeneratorAdapter` configured for diverse generation.
 
 ### `baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`
 
-Returns a `StatefulSequenceGeneratorAdapter` with `gamma=0`
-(pure constrained generation, no diversity adjustment). Used as the comparison baseline.
+Returns a `StatefulSequenceGeneratorAdapter` backed by the project's mask-only
+regex constraint processor. It performs pure constrained generation without the
+diversity adjustment and is used as the internal comparison baseline.
 
 ### `StatefulSequenceGeneratorAdapter`
 
@@ -370,7 +371,7 @@ Returns a `StatefulSequenceGeneratorAdapter` with `gamma=0`
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `gamma` | `0.5` | Reward scale. Higher values more aggressively boost under-explored paths. `gamma=0` disables diversity (baseline). |
+| `gamma` | `0.5` | Reward scale. Higher values more aggressively boost under-explored paths. Use `baseline_regex` for the internal regex-only baseline. |
 | `beta` | `3.0` | Penalty scale. Higher values more strongly suppress tokens reused within the current batch. |
 
 ---
