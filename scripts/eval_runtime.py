@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import baseline_regex, diverse_regex
+from diverse_guide import DiverseGuide, baseline_regex
 
 try:
     from generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX, set_generation_seed
@@ -211,7 +211,7 @@ def main():
             print("Baseline backend: internal mask-only")
             generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
-        generator = diverse_regex(model, tokenizer, regex, **generation_kwargs)
+        generator = DiverseGuide(model, tokenizer, regex, **generation_kwargs)
 
     total_token_num = 0
     total_time = 0.0

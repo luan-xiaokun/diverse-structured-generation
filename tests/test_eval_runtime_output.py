@@ -248,6 +248,52 @@ def test_main_keeps_internal_baseline_generation_kwargs_unchanged(
     assert seed_calls == [42]
 
 
+def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
+        calls["model"] = model
+        calls["tokenizer"] = tokenizer
+        calls["regex"] = regex
+        calls["kwargs"] = kwargs
+
+        def generate(prompt, max_tokens=None):
+            calls["prompt"] = prompt
+            calls["max_tokens"] = max_tokens
+            return "abcde"
+
+        return generate
+
+    _install_runtime_fakes(monkeypatch, fake_diverse_guide)
+    monkeypatch.setattr(eval_runtime, "DiverseGuide", fake_diverse_guide)
+    output = tmp_path / "runtime.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "eval_runtime.py",
+            "css-color",
+            "-n",
+            "5",
+            "--max-tokens",
+            "2",
+            "--temperature",
+            "1.5",
+            "--output",
+            str(output),
+        ],
+    )
+
+    eval_runtime.main()
+
+    assert calls["regex"] == eval_runtime.GRAMMAR_REGEX["css-color"]
+    assert calls["kwargs"] == {"temperature": 1.5}
+    assert calls["max_tokens"] == 2
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved["setting"] == "diverse"
+    assert saved["parameters"]["baseline_backend"] == "internal"
+
+
 def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_path):
     calls = {}
     seed_calls = []

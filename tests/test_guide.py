@@ -627,7 +627,7 @@ def test_python_adapter_and_factory_coverage():
 
     d = gp.diverse_regex(model, tok, "[ab]")
     b = gp.baseline_regex(model, tok, "[ab]")
-    assert isinstance(d, gp.StatefulSequenceGeneratorAdapter)
+    assert isinstance(d, gp.DiverseGuide)
     assert b.logits_processor.gamma == 0.0
 
 
@@ -666,10 +666,17 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     adapter.update_generated_content("a")
     baseline = gr.baseline_regex(model, tok, "[ab]")
     assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
+    guide = gr.DiverseGuide(model, tok, "[ab]", gamma=0.5, beta=3.0)
+    assert isinstance(guide, gr.StatefulSequenceGeneratorAdapter)
+    assert isinstance(guide.logits_processor, gr.DiverseRegexLogitsProcessor)
+    assert guide.regex_str == "[ab]"
+    assert guide.gamma == 0.5
+    assert guide.beta == 3.0
 
     a1 = gr.diverse_regex(model, tok, "[ab]", ablation_component="reward")
     a2 = gr.diverse_regex(model, tok, "[ab]", ablation_component="penalty")
     a3 = gr.diverse_regex(model, tok, "[ab]", ablation_component="range_scaling")
+    assert isinstance(a1, gr.DiverseGuide)
     assert a1.logits_processor.no_reward
     assert a2.logits_processor.no_penalty
     assert a3.logits_processor.no_range_scaling

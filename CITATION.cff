@@ -1,7 +1,7 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite the associated ICFEM paper."
+message: "If you use DiverseGuide, please cite the associated ICFEM paper."
 type: software
-title: "Diverse Structured Generation"
+title: "DiverseGuide: Automata-Based Steering for Diverse Structured Generation"
 authors:
   - family-names: Luan
     given-names: Xiaokun
@@ -15,7 +15,7 @@ authors:
   - family-names: Sun
     given-names: Meng
     orcid: "https://orcid.org/0000-0001-6550-7396"
-abstract: "A diversity-enhancing method for large-language-model structured generation constrained by regular expressions."
+abstract: "DiverseGuide is an automata-based steering tool for diverse large-language-model structured generation constrained by regular expressions."
 keywords:
   - large language models
   - structured generation
@@ -24,8 +24,8 @@ keywords:
   - diversity
 license: MIT
 version: 0.2.0
-repository-code: "https://github.com/luan-xiaokun/diverse-structured-generation"
-url: "https://github.com/luan-xiaokun/diverse-structured-generation"
+repository-code: "https://github.com/luan-xiaokun/diverse-guide"
+url: "https://github.com/luan-xiaokun/diverse-guide"
 preferred-citation:
   type: conference-paper
   title: "Automata-Based Steering of Large Language Models for Diverse Structured Generation"

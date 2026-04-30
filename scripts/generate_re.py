@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import baseline_regex, diverse_regex
+from diverse_guide import DiverseGuide, baseline_regex
 from diverse_guide.evaluation.paths import get_data_dir_path
 
 GRAMMAR_REGEX = {
@@ -187,7 +187,7 @@ def main():
     if args.baseline:
         generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
-        generator = diverse_regex(
+        generator = DiverseGuide(
             model,
             tokenizer,
             regex,

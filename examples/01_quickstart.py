@@ -15,7 +15,7 @@ Run:
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import diverse_regex
+from diverse_guide import DiverseGuide
 
 MODEL_PATH = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -37,7 +37,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
     # Build the diverse generator once (compiles DFA + token-transition table)
-    generator = diverse_regex(model, tokenizer, CSS_HEX_REGEX)
+    generator = DiverseGuide(model, tokenizer, CSS_HEX_REGEX)
 
     print(f"\nGenerating {N_SAMPLES} diverse CSS hex colors:\n")
     samples = []

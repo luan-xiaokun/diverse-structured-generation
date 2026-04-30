@@ -1,6 +1,7 @@
 # Reproducibility Guide
 
-This guide is the reviewer-facing entry point for reproducing the empirical
+This guide is the reviewer-facing entry point for the DiverseGuide artifact and
+for reproducing the empirical
 results reported in the ICFEM 2025 paper:
 
 > Automata-Based Steering of Large Language Models for Diverse Structured

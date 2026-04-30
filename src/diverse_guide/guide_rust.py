@@ -316,7 +316,7 @@ class StatefulSequenceGeneratorAdapter:
 
     Typical usage::
 
-        generator = diverse_regex(model, tokenizer, regex_str)
+        generator = DiverseGuide(model, tokenizer, regex_str)
         for _ in range(100):
             text = generator(prompt, max_tokens=40)
             generator.update_generated_content(text)  # update global path counter
@@ -433,6 +433,44 @@ class StatefulSequenceGeneratorAdapter:
         self.logits_processor.dfa.update_path_counter(generated_content)
 
 
+class DiverseGuide(StatefulSequenceGeneratorAdapter):
+    """User-facing generator for diverse regex-constrained generation.
+
+    ``DiverseGuide`` is the canonical public API for the DiverseGuide software.
+    It compiles the regex constraint into a DFA-backed logits processor and
+    exposes the same single-sequence and batch generation methods as
+    :class:`StatefulSequenceGeneratorAdapter`.
+    """
+
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        regex_str: str,
+        gamma: float = 0.5,
+        beta: float = 3.0,
+        ablation_component: str | None = None,
+        **generation_kwargs,
+    ):
+        no_reward = ablation_component == "reward"
+        no_penalty = ablation_component == "penalty"
+        no_range_scaling = ablation_component == "range_scaling"
+        logits_processor = DiverseRegexLogitsProcessor(
+            regex_str,
+            tokenizer,
+            gamma=gamma,
+            beta=beta,
+            no_reward=no_reward,
+            no_penalty=no_penalty,
+            no_range_scaling=no_range_scaling,
+        )
+        super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
+        self.regex_str = regex_str
+        self.gamma = gamma
+        self.beta = beta
+        self.ablation_component = ablation_component
+
+
 def diverse_regex(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -443,6 +481,9 @@ def diverse_regex(
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator.
+
+    This compatibility helper returns :class:`DiverseGuide`. New code should
+    instantiate ``DiverseGuide`` directly.
 
     Parameters
     ----------
@@ -463,21 +504,14 @@ def diverse_regex(
     **generation_kwargs
         Additional kwargs forwarded to model.generate().
     """
-    no_reward = ablation_component == "reward"
-    no_penalty = ablation_component == "penalty"
-    no_range_scaling = ablation_component == "range_scaling"
-
-    logits_processor = DiverseRegexLogitsProcessor(
-        regex_str,
+    return DiverseGuide(
+        model,
         tokenizer,
+        regex_str,
         gamma=gamma,
         beta=beta,
-        no_reward=no_reward,
-        no_penalty=no_penalty,
-        no_range_scaling=no_range_scaling,
-    )
-    return StatefulSequenceGeneratorAdapter(
-        model, tokenizer, logits_processor, **generation_kwargs
+        ablation_component=ablation_component,
+        **generation_kwargs,
     )
 
 

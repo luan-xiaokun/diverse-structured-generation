@@ -1,9 +1,11 @@
-# Diverse Structured Generation
+# DiverseGuide
 
 ![Version](https://img.shields.io/badge/version-v0.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-This repository is the artifact for the paper:
+**OSP title:** DiverseGuide: Automata-Based Steering for Diverse Structured Generation
+
+This repository is the DiverseGuide software artifact for the paper:
 
 > **Automata-Based Steering of Large Language Models for Diverse Structured Generation**
 > Xiaokun Luan, Zeming Wei, Yihao Zhang, Meng Sun
@@ -15,7 +17,7 @@ It implements a diversity-enhancing method for LLM structured generation constra
 
 ## Table of Contents
 
-- [Diverse Structured Generation](#diverse-structured-generation)
+- [DiverseGuide](#diverseguide)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Installation](#installation)
@@ -29,7 +31,7 @@ It implements a diversity-enhancing method for LLM structured generation constra
   - [Minimal Smoke Test](#minimal-smoke-test)
   - [Quick Start](#quick-start)
   - [API Reference](#api-reference)
-    - [`diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`](#diverse_regexmodel-tokenizer-regex_str-gamma05-beta30-generation_kwargs)
+    - [`DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`](#diverseguidemodel-tokenizer-regex_str-gamma05-beta30-generation_kwargs)
     - [`baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`](#baseline_regexmodel-tokenizer-regex_str-generation_kwargs)
     - [`StatefulSequenceGeneratorAdapter`](#statefulsequencegeneratoradapter)
     - [Parameters](#parameters)
@@ -45,10 +47,10 @@ It implements a diversity-enhancing method for LLM structured generation constra
 
 ## Overview
 
-This project adds regex-constrained diverse generation on top of standard Hugging Face Transformers workflows.
+`DiverseGuide` adds regex-constrained diverse generation on top of standard Hugging Face Transformers workflows.
 You keep using `AutoModelForCausalLM` and `AutoTokenizer`, then create a guided generator via:
 
-- `diverse_regex(model, tokenizer, regex_str, ...)` for diversity-enhanced constrained generation
+- `DiverseGuide(model, tokenizer, regex_str, ...)` for diversity-enhanced constrained generation
 - `baseline_regex(model, tokenizer, regex_str, ...)` for constrained generation without diversity adjustment
 
 Typical usage flow:
@@ -296,10 +298,10 @@ it only verifies that the Python package and Rust extension are installed and wo
 ```bash
 python - <<'PY'
 from regex_dfa_guide import DiverseGuideDFA
-from diverse_guide import diverse_regex, baseline_regex
+from diverse_guide import DiverseGuide, baseline_regex
 
 # Import check for public API
-assert callable(diverse_regex)
+assert callable(DiverseGuide)
 assert callable(baseline_regex)
 
 # Rust extension check
@@ -322,7 +324,7 @@ If this script prints `Smoke test passed`, your environment setup is correct.
 ```python
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from diverse_guide import diverse_regex, baseline_regex
+from diverse_guide import DiverseGuide
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
@@ -334,7 +336,7 @@ tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
 # regex for six-digit hex CSS colors
 css_color_regex = r"#[0-9a-fA-F]{6}"
 
-generator = diverse_regex(model, tokenizer, css_color_regex)
+generator = DiverseGuide(model, tokenizer, css_color_regex)
 
 # generate a single sample
 sample = generator("Give me a CSS color code.", max_tokens=20)
@@ -349,9 +351,14 @@ See [examples/](examples/) for more complete usage patterns.
 
 ## API Reference
 
-### `diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`
+### `DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`
 
-Returns a `StatefulSequenceGeneratorAdapter` configured for diverse generation.
+Creates a stateful generator configured for diverse regex-constrained generation.
+The returned object is callable for one sample and also exposes
+`generate_batch(prompt, n, max_tokens)`.
+
+`diverse_regex(...)` remains available as a compatibility helper that returns
+`DiverseGuide(...)`.
 
 ### `baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`
 
@@ -467,7 +474,7 @@ The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tes
 
 Verification status for the `v0.2.0` artifact snapshot:
 
-- Python test suite: `179 passed`
+- Python test suite: `196 passed`
 - Rust unit tests (`regex_dfa_guide`): `12 passed`
 - Python linting with Ruff: passed
 - `CITATION.cff` validation with `cffconvert`: passed

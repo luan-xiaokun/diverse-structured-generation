@@ -58,6 +58,7 @@ Ruff linting, and PowerShell experiment-script checks.
 The root Python package exports the Rust-backed implementation from
 `src/diverse_guide/__init__.py`:
 
+- `DiverseGuide`
 - `diverse_regex`
 - `baseline_regex`
 - `StatefulSequenceGeneratorAdapter`
@@ -71,7 +72,7 @@ explain the change.
 
 ## Adding a New Grammar
 
-For ad hoc usage, users can pass any regex directly to `diverse_regex`.
+For ad hoc usage, users can pass any regex directly to `DiverseGuide`.
 
 For experiment-script support:
 

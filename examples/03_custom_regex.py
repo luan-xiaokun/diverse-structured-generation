@@ -11,7 +11,7 @@ Run:
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import diverse_regex
+from diverse_guide import DiverseGuide
 
 MODEL_PATH = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -39,7 +39,7 @@ def run_task(
     print(f"Prompt: {prompt}")
     print(f"gamma={gamma}, beta={beta}\n")
 
-    generator = diverse_regex(model, tokenizer, regex, gamma=gamma, beta=beta)
+    generator = DiverseGuide(model, tokenizer, regex, gamma=gamma, beta=beta)
     samples = generator.generate_batch(prompt, n=n, max_tokens=max_tokens)
 
     for i, s in enumerate(samples):

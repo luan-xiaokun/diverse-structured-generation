@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_VERSION = "0.2.0"
 EXPECTED_LICENSE = "MIT"
+EXPECTED_TITLE = (
+    "DiverseGuide: Automata-Based Steering for Diverse Structured Generation"
+)
+EXPECTED_REPOSITORY = "https://github.com/luan-xiaokun/diverse-guide"
 
 
 def _read_toml(relative_path: str):
@@ -62,3 +66,17 @@ def test_release_license_metadata_is_consistent():
     assert citation["license"] == EXPECTED_LICENSE
     assert "Permission is hereby granted, free of charge" in license_text
     assert 'THE SOFTWARE IS PROVIDED "AS IS"' in license_text
+
+
+def test_release_identity_metadata_names_diverseguide():
+    project = _read_toml("pyproject.toml")
+    citation = _read_cff_top_level_scalars()
+
+    assert project["project"]["name"] == "diverse-guide"
+    assert "DiverseGuide" in project["project"]["description"]
+    assert project["project"]["urls"]["Repository"] == EXPECTED_REPOSITORY
+    assert project["project"]["urls"]["Homepage"] == EXPECTED_REPOSITORY
+    assert project["project"]["urls"]["Issues"] == f"{EXPECTED_REPOSITORY}/issues"
+    assert citation["title"] == EXPECTED_TITLE
+    assert citation["repository-code"] == EXPECTED_REPOSITORY
+    assert citation["url"] == EXPECTED_REPOSITORY
