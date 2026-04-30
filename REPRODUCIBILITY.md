@@ -95,6 +95,11 @@ Recommended order:
 5. Run component ablation: `experiments/5_component_ablation.*`.
 6. Run the case study under `experiments/case_study/`.
 
+The default efficiency-evaluation baseline is the internal regex-only
+masking backend (`--baseline-backend internal`). The optional Outlines backend
+is useful for external diagnostic comparisons, but it is not required for the
+reported efficiency table and should be written to separate output files.
+
 Approximate runtime on a single GPU is documented in
 `experiments/README.md`. The generation and efficiency experiments are the most
 expensive groups; expect roughly one hour for each of those groups on the
@@ -137,11 +142,12 @@ commit, Python version, platform, and the selected string-kernel backend.
 
 ## Nondeterminism and Tolerance
 
-The generation scripts do not fix a seed by default. Set `SEED` when you want
-same-environment repeatability:
+Generation and runtime scripts do not fix a seed by default. Set `SEED` when
+you want same-environment repeatability:
 
 ```bash
 SEED=42 bash experiments/1_generation.sh
+SEED=42 bash experiments/3_efficiency_evaluation.sh
 SEED=42 bash experiments/4_temperature_ablation.sh
 SEED=42 bash experiments/5_component_ablation.sh
 ```
@@ -151,6 +157,7 @@ PowerShell uses the same environment variable:
 ```powershell
 $env:SEED = "42"
 ./experiments/1_generation.ps1
+./experiments/3_efficiency_evaluation.ps1
 ```
 
 Even with a seed, exact bit-for-bit outputs may vary across model revisions,
@@ -158,10 +165,11 @@ PyTorch and Transformers versions, CUDA versions, GPU hardware, and sampling
 implementation details. Reviewers should compare reproduced metrics within a
 reasonable empirical tolerance rather than expecting byte-identical samples.
 
-An automated tolerance checker for `results/tables/*.csv` is planned as a
-separate OSP preparation task. Until that checker exists, treat the structured
-JSON and CSV outputs as the primary reproduction artifacts and compare them to
-the paper tables manually.
+Treat the structured JSON and CSV outputs as the primary reproduction artifacts.
+When comparing with the paper tables, record the command line, seed, model
+revision, hardware, and software environment used for the reproduction. Runtime
+throughput and sampling-based diversity metrics should be compared within a
+reasonable empirical tolerance rather than as exact equality checks.
 
 ## Reviewer Checklist
 

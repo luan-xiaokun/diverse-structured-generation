@@ -236,13 +236,13 @@ primary reproduction artifacts.
 
 ### `1_generation.*`
 
-- Runs diverse generation and baseline generation for all seven grammars.
+- Runs diverse generation and baseline generation for all four grammars.
 - Uses `1000` samples per grammar.
 - Applies `--max-tokens 54` for the `json` grammar.
 
 ### `2_diversity_evaluation.*`
 
-- Evaluates both diverse and baseline outputs for all seven grammars.
+- Evaluates both diverse and baseline outputs for all four grammars.
 - Used for the paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3).
 
 ### `3_efficiency_evaluation.*`

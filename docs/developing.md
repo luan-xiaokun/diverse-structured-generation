@@ -206,6 +206,8 @@ Before a release or OSP artifact snapshot:
 5. Validate `CITATION.cff` with `cffconvert --validate --infile CITATION.cff`.
 6. Confirm `REPRODUCIBILITY.md`, `docs/architecture.md`, and this file describe
    the current command surface.
-7. Confirm generated `data/`, `results/`, native build artifacts, virtual
+7. Create an immutable git tag for the artifact snapshot, such as `v0.2.0`, and
+   use that tag or a DOI-backed archive link in OSP metadata.
+8. Confirm generated `data/`, `results/`, native build artifacts, virtual
    environments, and caches are not part of the release unless intentionally
    archived as supplementary material.
