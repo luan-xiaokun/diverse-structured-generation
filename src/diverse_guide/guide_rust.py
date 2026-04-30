@@ -65,6 +65,76 @@ class DiverseRegexGuide:
         return state == -1 or self.dfa.is_final_state(state)
 
 
+class RegexMaskLogitsProcessor(LogitsProcessor):
+    """HuggingFace ``LogitsProcessor`` that enforces regex constraints only."""
+
+    def __init__(self, regex_string: str, tokenizer: PreTrainedTokenizerBase):
+        self.guide = DiverseRegexGuide(regex_string, tokenizer)
+        self.dfa = self.guide.dfa
+        self._seq_start_idx: int | None = None
+        self._guide_states_by_row: list[int] | None = None
+        self._processed_lengths_by_row: list[int] | None = None
+
+    def reset(self) -> None:
+        """Reset per-call state before a new ``model.generate()`` call."""
+        self._seq_start_idx = None
+        self._guide_states_by_row = None
+        self._processed_lengths_by_row = None
+
+    def _ensure_rows(self, batch_size: int) -> None:
+        if (
+            self._guide_states_by_row is None
+            or len(self._guide_states_by_row) != batch_size
+        ):
+            self._guide_states_by_row = [self.guide.initial_state] * batch_size
+            self._processed_lengths_by_row = [0] * batch_size
+
+    def _advance_row(self, row: int, gen_ids: torch.Tensor) -> int:
+        assert self._guide_states_by_row is not None
+        assert self._processed_lengths_by_row is not None
+
+        state = self._guide_states_by_row[row]
+        processed = self._processed_lengths_by_row[row]
+        while processed < gen_ids.shape[0]:
+            token_id = gen_ids[processed].item()
+            if state != -1:
+                try:
+                    state = self.guide.get_next_state(state, token_id)
+                except ValueError:
+                    state = -1
+            processed += 1
+
+        self._guide_states_by_row[row] = state
+        self._processed_lengths_by_row[row] = processed
+        return state
+
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor
+    ) -> torch.FloatTensor:
+        if self._seq_start_idx is None:
+            self._seq_start_idx = input_ids.shape[1]
+        self._ensure_rows(input_ids.shape[0])
+
+        allowed_tokens_batch = []
+        batch_indices = []
+        for row, seq_ids in enumerate(input_ids):
+            gen_ids = seq_ids[self._seq_start_idx :]
+            guide_state = self._advance_row(row, gen_ids)
+            allowed_tokens = self.guide.get_next_instruction(guide_state)
+            allowed_tokens = torch.tensor(
+                allowed_tokens, dtype=torch.long, device=scores.device
+            )
+            allowed_tokens_batch.append(allowed_tokens)
+            batch_indices.append(torch.full_like(allowed_tokens, row))
+
+        allowed_tokens_concat = torch.cat(allowed_tokens_batch)
+        batch_indices_concat = torch.cat(batch_indices)
+        allowed_scores = scores[batch_indices_concat, allowed_tokens_concat]
+        scores.fill_(float("-inf"))
+        scores[batch_indices_concat, allowed_tokens_concat] = allowed_scores
+        return scores
+
+
 class DiverseRegexLogitsProcessor(LogitsProcessor):
     """HuggingFace ``LogitsProcessor`` that enforces a regex and promotes diversity.
 
@@ -128,16 +198,48 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self.no_penalty = no_penalty
         self.no_range_scaling = no_range_scaling
 
-        self._guide_states: dict[tuple[int, ...], int] = {(): guide.initial_state}
-        self._seq_start_idx: int | None = (
-            None  # set on first __call__; reset by reset()
-        )
+        self._seq_start_idx: int | None = None
+        self._guide_states_by_row: list[int] | None = None
+        self._processed_lengths_by_row: list[int] | None = None
 
     def reset(self) -> None:
         """Reset per-call state. Must be called before each new ``model.generate()``
         call."""
         self._seq_start_idx = None
-        self._guide_states: dict[tuple[int, ...], int] = {(): self.guide.initial_state}
+        self._guide_states_by_row = None
+        self._processed_lengths_by_row = None
+
+    def _ensure_rows(self, batch_size: int) -> None:
+        if (
+            self._guide_states_by_row is None
+            or len(self._guide_states_by_row) != batch_size
+        ):
+            self._guide_states_by_row = [self.guide.initial_state] * batch_size
+            self._processed_lengths_by_row = [0] * batch_size
+
+    def _advance_row(self, row: int, gen_ids: torch.Tensor) -> int:
+        assert self._guide_states_by_row is not None
+        assert self._processed_lengths_by_row is not None
+
+        state = self._guide_states_by_row[row]
+        processed = self._processed_lengths_by_row[row]
+        while processed < gen_ids.shape[0]:
+            token_id = gen_ids[processed].item()
+            prev_state = state
+            if prev_state == -1:
+                state = -1
+            else:
+                try:
+                    state = self.guide.get_next_state(prev_state, token_id)
+                except ValueError:
+                    state = -1
+                if state != -1:
+                    self.dfa.update_local_state_counter(prev_state, token_id)
+            processed += 1
+
+        self._guide_states_by_row[row] = state
+        self._processed_lengths_by_row[row] = processed
+        return state
 
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
@@ -146,30 +248,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         step."""
         if self._seq_start_idx is None:
             self._seq_start_idx = input_ids.shape[1]
+        self._ensure_rows(input_ids.shape[0])
 
-        sequence_states: list[int] = []
-
-        for seq_ids in input_ids:
+        sequence_states = []
+        for row, seq_ids in enumerate(input_ids):
             gen_ids = seq_ids[self._seq_start_idx :]
-            curr_state_key = tuple(gen_ids.tolist())
-
-            if curr_state_key not in self._guide_states:
-                token_id = gen_ids[-1].item()
-                prev_state = self._guide_states[tuple(gen_ids[:-1].tolist())]
-                if prev_state == -1:
-                    curr_state = -1
-                else:
-                    try:
-                        curr_state = self.guide.get_next_state(prev_state, token_id)
-                    except ValueError:
-                        # In batched generation, finished rows may carry padding-like
-                        # tokens in subsequent steps. Treat them as terminal.
-                        curr_state = -1
-                self._guide_states[curr_state_key] = curr_state
-                if prev_state != -1 and curr_state != -1:
-                    self.dfa.update_local_state_counter(prev_state, token_id)
-
-            sequence_states.append(self._guide_states[curr_state_key])
+            sequence_states.append(self._advance_row(row, gen_ids))
 
         device = scores.device
         allowed_tokens_batch = []
@@ -202,13 +286,10 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         allowed_tokens_concat = torch.cat(allowed_tokens_batch).to(device)
         batch_indices_concat = torch.cat(batch_indices).to(device)
         adjusts_concat = torch.cat(adjusts).to(device)
+        allowed_scores = scores[batch_indices_concat, allowed_tokens_concat]
 
-        mask = torch.ones_like(scores, dtype=torch.bool)
-        mask[batch_indices_concat, allowed_tokens_concat] = False
-        scores.masked_fill_(mask, float("-inf"))
-
-        min_logits = scores[batch_indices_concat, allowed_tokens_concat].min()
-        max_logits = scores[batch_indices_concat, allowed_tokens_concat].max()
+        min_logits = allowed_scores.min()
+        max_logits = allowed_scores.max()
         logits_range = max_logits - min_logits
 
         if self.no_range_scaling:
@@ -216,9 +297,10 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         else:
             final_adjustment = self.gamma * logits_range * adjusts_concat
 
-        adjust_tensor = torch.zeros_like(scores)
-        adjust_tensor[batch_indices_concat, allowed_tokens_concat] = final_adjustment
-        scores.add_(adjust_tensor)
+        scores.fill_(float("-inf"))
+        scores[batch_indices_concat, allowed_tokens_concat] = (
+            allowed_scores + final_adjustment
+        )
 
         return scores
 
@@ -245,7 +327,7 @@ class StatefulSequenceGeneratorAdapter:
         self,
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizerBase,
-        logits_processor: DiverseRegexLogitsProcessor,
+        logits_processor: RegexMaskLogitsProcessor | DiverseRegexLogitsProcessor,
         **generation_defaults,
     ):
         """
@@ -403,7 +485,8 @@ def baseline_regex(
     regex_str: str,
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
-    """Create a baseline (non-diverse) regex-constrained generator using gamma=0."""
-    return diverse_regex(
-        model, tokenizer, regex_str, gamma=0.0, beta=1.0, **generation_kwargs
+    """Create a non-diverse regex-constrained baseline generator."""
+    logits_processor = RegexMaskLogitsProcessor(regex_str, tokenizer)
+    return StatefulSequenceGeneratorAdapter(
+        model, tokenizer, logits_processor, **generation_kwargs
     )

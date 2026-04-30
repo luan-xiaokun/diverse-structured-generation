@@ -124,6 +124,9 @@ run_runtime_suite() {
         local output_path
         output_path="$(runtime_result_path "$baseline_flag" "$grammar")"
         local cmd=("eval-runtime" "$grammar" "--model" "$DEFAULT_MODEL" "--output" "$output_path")
+        while IFS= read -r arg; do
+            [[ -n "$arg" ]] && cmd+=("$arg")
+        done < <(seed_args)
         if [[ "$baseline_flag" == "true" ]]; then
             cmd+=("--baseline")
         fi

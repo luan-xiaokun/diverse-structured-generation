@@ -26,6 +26,7 @@ pub struct DfaIndex {
     final_states: HashSet<StateId>,
     byte_transitions: HashMap<StateId, HashMap<Byte, StateId>>,
     token_transitions: HashMap<StateId, HashMap<TokenId, StateId>>,
+    token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
     allowed_token_ids: HashMap<StateId, Vec<TokenId>>,
     vocabulary: HashMap<TokenId, String>,
 }
@@ -55,7 +56,8 @@ impl DfaIndex {
             states.extend(inputs.values().cloned());
         }
         // iterate each state, construct token level transitions
-        let mut token_transitions: HashMap<StateId, HashMap<TokenId, StateId>> =
+        let mut token_transitions: HashMap<StateId, HashMap<TokenId, StateId>> = HashMap::default();
+        let mut token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>> =
             HashMap::default();
         for &current_state in &states {
             'token_loop: for (token_id, token_str) in vocabulary.iter() {
@@ -63,6 +65,7 @@ impl DfaIndex {
                     continue;
                 }
                 let mut next_state = current_state;
+                let mut state_path = vec![current_state];
                 for byte in token_str.as_bytes() {
                     next_state = match transitions.get(&next_state) {
                         Some(trans) => match trans.get(&byte) {
@@ -70,12 +73,17 @@ impl DfaIndex {
                             None => continue 'token_loop,
                         },
                         None => continue 'token_loop,
-                    }
+                    };
+                    state_path.push(next_state);
                 }
                 token_transitions
                     .entry(current_state)
                     .or_default()
                     .insert(*token_id, next_state);
+                token_state_paths
+                    .entry(current_state)
+                    .or_default()
+                    .insert(*token_id, state_path);
             }
         }
         // add eos token transitions for final states
@@ -84,6 +92,10 @@ impl DfaIndex {
                 .entry(final_state)
                 .or_default()
                 .insert(eos_token_id, final_state);
+            token_state_paths
+                .entry(final_state)
+                .or_default()
+                .insert(eos_token_id, vec![final_state, final_state]);
         }
         // compute live states (under token-transitions)
         let mut live_states: HashSet<StateId> = final_states.clone();
@@ -120,10 +132,23 @@ impl DfaIndex {
             }
         }
         // Prune token_transitions to only transitions leading to live states
-        for token_map in token_transitions.values_mut() {
-            token_map.retain(|_, to_state| live_states.contains(to_state));
+        for (from_state, token_map) in token_transitions.iter_mut() {
+            let mut pruned_token_ids = Vec::new();
+            token_map.retain(|token_id, to_state| {
+                let keep = live_states.contains(to_state);
+                if !keep {
+                    pruned_token_ids.push(*token_id);
+                }
+                keep
+            });
+            if let Some(path_map) = token_state_paths.get_mut(from_state) {
+                for token_id in pruned_token_ids {
+                    path_map.remove(&token_id);
+                }
+            }
         }
         token_transitions.retain(|_, token_map| !token_map.is_empty());
+        token_state_paths.retain(|_, path_map| !path_map.is_empty());
 
         Ok(Self {
             eos_token_id,
@@ -131,6 +156,7 @@ impl DfaIndex {
             final_states,
             byte_transitions: transitions,
             token_transitions,
+            token_state_paths,
             allowed_token_ids: allowed_token_ids
                 .into_iter()
                 .map(|(state, tokens)| (state, tokens.into_iter().collect()))
@@ -269,13 +295,23 @@ impl DfaIndex {
                 token_transition_map
                     .get(&token_id)
                     .copied()
-                    .ok_or_else(|| {
-                        Error::NoTokenTransitionFound(state as usize, token_id as usize)
-                    })
+                    .ok_or_else(|| Error::NoTokenTransitionFound(state as usize, token_id as usize))
             })
     }
 
-    pub fn get_byte_state_sequence(
+    fn get_cached_token_state_path(&self, state: StateId, token_id: TokenId) -> Option<&[StateId]> {
+        self.token_state_paths
+            .get(&state)
+            .and_then(|paths| paths.get(&token_id))
+            .map(Vec::as_slice)
+    }
+
+    fn get_token_state_path(&self, state: StateId, token_id: TokenId) -> Result<&[StateId]> {
+        self.get_cached_token_state_path(state, token_id)
+            .ok_or_else(|| Error::NoTokenTransitionFound(state as usize, token_id as usize))
+    }
+
+    fn compute_byte_state_sequence(
         &self,
         state: StateId,
         token_id: TokenId,
@@ -296,6 +332,17 @@ impl DfaIndex {
             }
         }
         Ok(state_seq)
+    }
+
+    pub fn get_byte_state_sequence(
+        &self,
+        state: StateId,
+        token_id: TokenId,
+    ) -> Result<Vec<StateId>> {
+        if let Some(path) = self.get_cached_token_state_path(state, token_id) {
+            return Ok(path.to_vec());
+        }
+        self.compute_byte_state_sequence(state, token_id)
     }
 
     pub fn get_byte_transition_sequence(&self, string: &str) -> Result<Vec<(Byte, StateId)>> {
@@ -473,12 +520,15 @@ impl DiverseGuideDFA {
         Ok(())
     }
 
-    pub fn update_local_state_counter(
-        &mut self,
-        state: StateId,
-        token_id: TokenId,
-    ) -> Result<()> {
-        let byte_state_seq = self.index.get_byte_state_sequence(state, token_id)?;
+    pub fn update_local_state_counter(&mut self, state: StateId, token_id: TokenId) -> Result<()> {
+        let owned_seq;
+        let byte_state_seq = match self.index.get_cached_token_state_path(state, token_id) {
+            Some(path) => path,
+            None => {
+                owned_seq = self.index.get_byte_state_sequence(state, token_id)?;
+                &owned_seq
+            }
+        };
         for s in byte_state_seq[1..].iter() {
             *self.local_state_counter.entry(*s).or_insert(0) += 1;
         }
@@ -500,11 +550,11 @@ impl DiverseGuideDFA {
         let mut penalty_counts: Vec<u32> = vec![0; num_tokens];
 
         for (i, token_id) in token_ids.iter().enumerate() {
-            let byte_state_seq = self.index.get_byte_state_sequence(state, *token_id)?;
+            let byte_state_seq = self.index.get_token_state_path(state, *token_id)?;
             let mut minimal_path_count = u32::MAX;
             for (state1, state2) in byte_state_seq.windows(2).map(|w| (w[0], w[1])) {
-                minimal_path_count = minimal_path_count
-                    .min(*self.path_counter.get(&(state1, state2)).unwrap_or(&0));
+                minimal_path_count =
+                    minimal_path_count.min(*self.path_counter.get(&(state1, state2)).unwrap_or(&0));
             }
             reward_counts[i] = minimal_path_count;
             let mut maximal_local_state_count: u32 = 1;
@@ -516,7 +566,11 @@ impl DiverseGuideDFA {
             penalty_counts[i] = maximal_local_state_count;
         }
 
-        Ok(TokenCounts { token_ids, reward_counts, penalty_counts })
+        Ok(TokenCounts {
+            token_ids,
+            reward_counts,
+            penalty_counts,
+        })
     }
 }
 
@@ -552,11 +606,10 @@ mod tests {
         DiverseGuideDFA::new("ab", eos, toy_vocab(eos)).expect("toy DFA should build")
     }
 
-    fn counts_by_token(
-        dfa: &DiverseGuideDFA,
-        state: u32,
-    ) -> Map<TokenId, (u32, u32)> {
-        let counts = dfa.compute_counts(state).expect("compute_counts should succeed");
+    fn counts_by_token(dfa: &DiverseGuideDFA, state: u32) -> Map<TokenId, (u32, u32)> {
+        let counts = dfa
+            .compute_counts(state)
+            .expect("compute_counts should succeed");
         let mut out = Map::default();
         for i in 0..counts.token_ids.len() {
             out.insert(
@@ -697,11 +750,10 @@ mod tests {
         dfa.update_local_state_counter(initial, 3)
             .expect("local counter update should succeed");
 
-        let bytes = bincode::encode_to_vec(&dfa, config::standard())
-            .expect("encoding must succeed");
+        let bytes =
+            bincode::encode_to_vec(&dfa, config::standard()).expect("encoding must succeed");
         let (decoded, _): (DiverseGuideDFA, usize) =
-            bincode::decode_from_slice(&bytes, config::standard())
-                .expect("decoding must succeed");
+            bincode::decode_from_slice(&bytes, config::standard()).expect("decoding must succeed");
         assert_eq!(decoded, dfa);
     }
 
@@ -745,6 +797,19 @@ mod tests {
             .get_byte_state_sequence(initial, 123456)
             .expect_err("unknown token id should fail");
         assert!(matches!(err, Error::InvalidTokenId(_)));
+    }
+
+    #[test]
+    fn cached_token_state_paths_match_byte_state_walk() {
+        let dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        let token_path = dfa
+            .get_byte_state_sequence(initial, 3)
+            .expect("token 'ab' path should be cached");
+        let string_path = dfa
+            .get_state_sequence("ab")
+            .expect("string path should be valid");
+        assert_eq!(token_path, string_path);
     }
 
     #[test]

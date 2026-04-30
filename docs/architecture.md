@@ -54,8 +54,9 @@ generation step. It:
 4. Computes diversity adjustments for valid tokens.
 5. Adds the adjustments back to the Hugging Face score tensor.
 
-`baseline_regex` uses the same machinery with `gamma=0`, so it remains a
-regex-constrained generator without the diversity reward.
+`baseline_regex` uses `RegexMaskLogitsProcessor`, a mask-only processor that
+enforces the same regex constraint without computing the diversity reward or
+local penalty.
 
 ## DFA Backend
 
@@ -98,9 +99,10 @@ At a high level, each step combines three operations:
 3. **Local penalty**: tokens overused within the current generation call receive
    a larger penalty.
 
-The `gamma` parameter scales the reward signal. Setting `gamma=0` disables the
-diversity adjustment and gives the baseline constrained generator. The `beta`
-parameter scales the local penalty.
+The `gamma` parameter scales the reward signal in `DiverseRegexLogitsProcessor`.
+The `beta` parameter scales the local penalty. The default internal baseline is
+implemented separately by `RegexMaskLogitsProcessor` so runtime comparisons do
+not include diversity-count computation in the baseline path.
 
 The ablation options in `diverse_regex(..., ablation_component=...)` disable
 individual parts of this adjustment for experiment scripts:

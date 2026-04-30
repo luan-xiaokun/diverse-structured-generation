@@ -9,6 +9,7 @@ from scripts.collect_results import (
     collect_all,
     collect_experiment,
     main,
+    runtime_row,
 )
 
 
@@ -44,14 +45,22 @@ def _metrics_result(experiment, setting, grammar):
     }
 
 
-def _runtime_result(setting, grammar):
+def _runtime_result(setting, grammar, baseline_backend=None):
+    if baseline_backend is None:
+        baseline_backend = "outlines" if setting == "baseline" else "internal"
     return {
         "schema_version": 1,
         "experiment": "runtime",
         "setting": setting,
         "grammar": grammar,
         "model": "test/model",
-        "parameters": {"n": 2000, "max_tokens": 60, "temperature": None},
+        "parameters": {
+            "n": 2000,
+            "max_tokens": 60,
+            "temperature": None,
+            "baseline_backend": baseline_backend,
+            "seed": 42,
+        },
         "tokens": {"generated": 2000, "target": 2000},
         "timing": {"seconds": 100.0, "tokens_per_second": 20.0},
         "metadata": {"timestamp_utc": "2026-04-27T00:00:00Z"},
@@ -96,6 +105,30 @@ def test_collect_all_writes_csv_tables(tmp_path):
     with runtime_csv.open(encoding="utf-8") as f:
         runtime_rows = list(csv.DictReader(f))
     assert runtime_rows[0]["tokens_per_second"] == "20.0"
+    assert runtime_rows[0]["baseline_backend"] == "outlines"
+    assert runtime_rows[0]["seed"] == "42"
+
+
+def test_runtime_row_preserves_outlines_backend():
+    row = runtime_row(
+        _runtime_result(
+            "baseline",
+            "email",
+            baseline_backend="outlines",
+        )
+    )
+
+    assert row["baseline_backend"] == "outlines"
+    assert row["seed"] == 42
+
+
+def test_runtime_row_defaults_missing_baseline_backend_to_internal():
+    data = _runtime_result("baseline", "email")
+    del data["parameters"]["baseline_backend"]
+
+    row = runtime_row(data)
+
+    assert row["baseline_backend"] == "internal"
 
 
 def test_collect_all_reports_all_missing_or_empty_inputs_without_writing_tables(

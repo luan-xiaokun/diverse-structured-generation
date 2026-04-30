@@ -133,12 +133,13 @@ bash experiments/5_component_ablation.sh
 ./experiments/5_component_ablation.ps1
 ```
 
-Generation scripts do not fix a seed by default. To seed Python, NumPy, and
-PyTorch generation through every generation command in these scripts, set
-`SEED`:
+Generation and runtime scripts do not fix a seed by default. To seed Python,
+NumPy, and PyTorch generation through every generation or runtime command in
+these scripts, set `SEED`:
 
 ```bash
 SEED=42 bash experiments/1_generation.sh
+SEED=42 bash experiments/3_efficiency_evaluation.sh
 SEED=42 bash experiments/4_temperature_ablation.sh
 SEED=42 bash experiments/5_component_ablation.sh
 ```
@@ -248,6 +249,17 @@ primary reproduction artifacts.
 
 - Measures runtime for both diverse and baseline generation.
 - Used for the paper's efficiency-evaluation experiment results (Table 4).
+- The default baseline backend is the internal regex-only generator
+  (`--baseline-backend internal`). It uses the project's own mask-only
+  constraint processor and is the baseline included in the default reproduction
+  outputs.
+- External Outlines baselines are optional diagnostic comparisons. They are not
+  required for reproducing the reported efficiency table and should write to
+  separate files so the default reproduction outputs remain unchanged:
+
+```bash
+uv run --group outlines poe eval-runtime email --baseline --baseline-backend outlines --output results/runtime/external/email-outlines-1.2.12.json
+```
 
 ### `4_temperature_ablation.*`
 

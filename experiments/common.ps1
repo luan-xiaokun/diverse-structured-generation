@@ -111,6 +111,7 @@ function Invoke-RuntimeSuite {
     foreach ($grammar in $script:Grammars) {
         $outputPath = Get-RuntimeResultPath -Baseline:$Baseline -Grammar $grammar
         $cmd = @("eval-runtime", $grammar, "--model", $script:DefaultModel, "--output", $outputPath)
+        $cmd += Get-SeedArgs
         if ($Baseline) {
             $cmd += "--baseline"
         }
