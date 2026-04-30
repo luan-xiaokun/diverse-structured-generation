@@ -250,6 +250,7 @@ def test_main_keeps_internal_baseline_generation_kwargs_unchanged(
 
 def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_path):
     calls = {}
+    seed_calls = []
 
     def fake_outlines_generator(model, tokenizer, regex, **kwargs):
         calls["kwargs"] = kwargs
@@ -261,6 +262,7 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
         return generate
 
     _install_runtime_fakes(monkeypatch, fake_outlines_generator)
+    monkeypatch.setattr(eval_runtime, "set_generation_seed", seed_calls.append)
     monkeypatch.setattr(
         eval_runtime,
         "make_outlines_regex_generator",
@@ -280,6 +282,8 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
             "5",
             "--max-tokens",
             "2",
+            "--seed",
+            "42",
             "--output",
             str(output),
         ],
@@ -289,6 +293,10 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
 
     assert calls["kwargs"] == {"do_sample": True, "pad_token_id": 9}
     assert calls["max_tokens"] == 2
+    assert seed_calls == [42]
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved["parameters"]["baseline_backend"] == "outlines"
+    assert saved["parameters"]["seed"] == 42
 
 
 def test_build_runtime_result_handles_zero_time():

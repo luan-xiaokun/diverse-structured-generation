@@ -51,9 +51,7 @@ def test_set_generation_seed_seeds_python_numpy_and_torch(monkeypatch):
     monkeypatch.setattr("scripts.generate_re.random.seed", random_seed)
     monkeypatch.setattr("scripts.generate_re.np.random.seed", numpy_seed)
     monkeypatch.setattr("scripts.generate_re.torch.manual_seed", torch_manual_seed)
-    monkeypatch.setattr(
-        "scripts.generate_re.torch.cuda.is_available", lambda: True
-    )
+    monkeypatch.setattr("scripts.generate_re.torch.cuda.is_available", lambda: True)
     monkeypatch.setattr(
         "scripts.generate_re.torch.cuda.manual_seed_all",
         torch_cuda_manual_seed_all,

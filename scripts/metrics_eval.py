@@ -280,9 +280,7 @@ def main():
         model.eval()
         ppls = []
         samples_for_ppl = (
-            gen_data["samples"][: args.n]
-            if args.n is not None
-            else gen_data["samples"]
+            gen_data["samples"][: args.n] if args.n is not None else gen_data["samples"]
         )
         for text in samples_for_ppl:
             try:

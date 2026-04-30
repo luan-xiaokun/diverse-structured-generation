@@ -177,7 +177,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             HuggingFace tokenizer whose vocabulary is compiled into the DFA.
         gamma:
             Reward scale factor.  Higher values more aggressively boost tokens
-            on under-explored paths.  Set to ``0`` for baseline (no diversity).
+            on under-explored paths. Set to ``0`` to disable the reward
+            adjustment for this processor. The public internal baseline uses
+            :class:`RegexMaskLogitsProcessor`.
         beta:
             Penalty scale factor.  Higher values more strongly suppress tokens
             already used heavily within the current batch step.
