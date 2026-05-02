@@ -24,8 +24,8 @@ keywords:
   - diversity
 license: MIT
 version: 0.2.0
-repository-code: "https://github.com/luan-xiaokun/diverse-guide"
-url: "https://github.com/luan-xiaokun/diverse-guide"
+repository-code: "https://github.com/luan-xiaokun/diverse-structured-generation"
+url: "https://github.com/luan-xiaokun/diverse-structured-generation"
 preferred-citation:
   type: conference-paper
   title: "Automata-Based Steering of Large Language Models for Diverse Structured Generation"

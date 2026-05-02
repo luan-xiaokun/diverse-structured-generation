@@ -10,7 +10,7 @@ EXPECTED_LICENSE = "MIT"
 EXPECTED_TITLE = (
     "DiverseGuide: Automata-Based Steering for Diverse Structured Generation"
 )
-EXPECTED_REPOSITORY = "https://github.com/luan-xiaokun/diverse-guide"
+EXPECTED_REPOSITORY = "https://github.com/luan-xiaokun/diverse-structured-generation"
 
 
 def _read_toml(relative_path: str):
