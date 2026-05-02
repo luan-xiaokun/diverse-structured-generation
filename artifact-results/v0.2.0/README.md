@@ -12,15 +12,20 @@ newly regenerated `results/tables/*.csv` files.
 | Directory | Role | Files |
 | --- | --- | --- |
 | `primary/` | OSP primary reproduction targets | `diversity.csv`, `runtime.csv` |
-| `optional/` | Extended ICFEM analyses | `temperature_ablation.csv`, `component_ablation.csv` |
+| `optional/` | optional extended ICFEM analyses | `temperature_ablation.csv`, `component_ablation.csv` |
 
 The primary files correspond to the OSP manuscript's main reproducibility
 claims: automata-oriented diversity and DFA coverage, plus runtime overhead
 relative to the internal regex-only baseline.
 
 The optional files correspond to supplementary ICFEM method analyses. They are
-included because the repository keeps the full ICFEM reproduction scripts, but
-they are not required for the primary OSP artifact check.
+included because the repository keeps the optional extended ICFEM reproduction
+scripts, but they are not required for the primary OSP artifact check.
+
+The optional automated impact check writes
+`experiments/case_study/case_study_summary.json` when run. It is documented in
+`experiments/case_study/README.md` and is not included here as a tracked
+reference file.
 
 ## Regenerating Summaries
 
@@ -51,7 +56,3 @@ Sampling-based diversity metrics can vary with seed, model revision, CUDA,
 PyTorch, Transformers, and tokenizer/model implementation details. Use the
 recorded metadata in the JSON files under `results/` when interpreting
 differences.
-
-The optional case study writes `experiments/case_study/case_study_summary.json`
-when run. It is documented in `experiments/case_study/README.md` and is not
-included here as a tracked reference file.

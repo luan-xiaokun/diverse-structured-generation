@@ -249,7 +249,7 @@ cl.exe /O2 /openmp /LD native\wd_kernel\wd_kernel.c /Febuild\native\wd_kernel\wd
 Models are loaded via `transformers.from_pretrained`, so you can use any compatible model.
 The default model used in experiments is `Qwen/Qwen2.5-1.5B-Instruct`.
 
-If you want to reproduce the paper's **temperature-ablation experiment results (Table 5, Table 6, Table 7)**,
+If you want to run the optional extended ICFEM temperature-ablation analysis,
 you should also prepare `microsoft/Phi-4-mini-instruct` for perplexity evaluation.
 
 ```bash
@@ -261,7 +261,7 @@ AutoModelForCausalLM.from_pretrained(model)
 "
 ```
 
-Optional additional download for the paper's temperature-ablation experiment results (Table 5, Table 6, Table 7):
+Optional additional download for the optional extended ICFEM temperature-ablation analysis:
 
 ```bash
 python -c "
@@ -444,9 +444,9 @@ Optional reproduction material remains available:
 
 | Role | Entry point | Reference summary |
 | --- | --- | --- |
-| Optional automated impact check | `experiments/case_study/` | Generated locally as `experiments/case_study/case_study_summary.json` |
-| Optional extended ICFEM temperature analysis | `experiments/4_temperature_ablation.*` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
-| Optional extended ICFEM component analysis | `experiments/5_component_ablation.*` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
+| optional automated impact check | `experiments/case_study/` | Generated locally as `experiments/case_study/case_study_summary.json` |
+| optional extended ICFEM temperature analysis | `experiments/4_temperature_ablation.*` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
+| optional extended ICFEM component analysis | `experiments/5_component_ablation.*` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
 
 The diversity results should be interpreted through automata-oriented coverage
 metrics first: DFA state coverage, transition coverage, and path coverage.
@@ -494,7 +494,7 @@ The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tes
 
 Verification status for the `v0.2.0` artifact snapshot:
 
-- Python test suite: `196 passed`
+- Python test suite: `200 passed`
 - Rust unit tests (`regex_dfa_guide`): `12 passed`
 - Python linting with Ruff: passed
 - `CITATION.cff` validation with `cffconvert`: passed
@@ -560,7 +560,7 @@ scripts/
 
 examples/                 # Standalone usage examples
 tests/                    # Pytest suite
-experiments/              # Paper reproduction scripts and case study
+experiments/              # OSP reproduction scripts and optional material
 
 Dockerfile                # Main container build
 .dockerignore             # Docker build-context exclusions

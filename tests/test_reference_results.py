@@ -66,17 +66,16 @@ def test_optional_reference_results_have_expected_schema_and_rows():
     temperature_rows = _read_rows(
         REFERENCE_ROOT / "optional" / "temperature_ablation.csv"
     )
-    component_rows = _read_rows(
-        REFERENCE_ROOT / "optional" / "component_ablation.csv"
-    )
+    component_rows = _read_rows(REFERENCE_ROOT / "optional" / "component_ablation.csv")
 
     assert len(temperature_rows) == 8
     assert len(component_rows) == 4
-    assert {row["experiment"] for row in temperature_rows} == {
-        "temperature_ablation"
-    }
+    assert {row["experiment"] for row in temperature_rows} == {"temperature_ablation"}
     assert {row["experiment"] for row in component_rows} == {"component_ablation"}
     assert {row["temperature"] for row in temperature_rows} == {"1.5"}
-    assert {
-        row["ablation_component"] for row in component_rows
-    } == {"", "penalty", "range_scaling", "reward"}
+    assert {row["ablation_component"] for row in component_rows} == {
+        "",
+        "penalty",
+        "range_scaling",
+        "reward",
+    }

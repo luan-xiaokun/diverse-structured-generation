@@ -28,9 +28,9 @@ Result-group map:
 | Primary OSP reproduction | Sample generation | `experiments/1_generation.*` | Yes |
 | Primary OSP reproduction | Diversity and DFA coverage | `experiments/2_diversity_evaluation.*` | Yes |
 | Primary OSP reproduction | Runtime efficiency | `experiments/3_efficiency_evaluation.*` | Yes |
-| Optional automated impact check | Coverage case study | `experiments/case_study/` | No |
-| Optional extended ICFEM analysis | Temperature ablation | `experiments/4_temperature_ablation.*` | No |
-| Optional extended ICFEM analysis | Component ablation | `experiments/5_component_ablation.*` | No |
+| optional automated impact check | Coverage case study | `experiments/case_study/` | No |
+| optional extended ICFEM analysis | Temperature ablation | `experiments/4_temperature_ablation.*` | No |
+| optional extended ICFEM analysis | Component ablation | `experiments/5_component_ablation.*` | No |
 
 The primary OSP reproduction focuses on the CSV summaries in
 `artifact-results/v0.2.0/primary/`. Optional extended ICFEM summaries are kept in
@@ -66,7 +66,7 @@ resulting `results/` artifacts.
 ## Quick Checks
 
 These checks are intended to verify that the artifact is installed and wired
-correctly without reproducing every paper table.
+correctly before running the OSP primary reproduction or optional material.
 
 From the repository root:
 
@@ -104,12 +104,12 @@ Recommended OSP primary reproduction order:
 5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
    with `artifact-results/v0.2.0/primary/`.
 
-Optional automated impact check:
+optional automated impact check:
 
 1. Run the case study under `experiments/case_study/`.
 2. Inspect the generated `experiments/case_study/case_study_summary.json`.
 
-Optional extended ICFEM analyses:
+optional extended ICFEM analyses:
 
 1. Run temperature ablation: `experiments/4_temperature_ablation.*`.
 2. Run component ablation: `experiments/5_component_ablation.*`.
@@ -203,10 +203,11 @@ implementation details. Reviewers should compare reproduced metrics within a
 reasonable empirical tolerance rather than expecting byte-identical samples.
 
 Treat the structured JSON and CSV outputs as the primary reproduction artifacts.
-When comparing with the paper tables, record the command line, seed, model
-revision, hardware, and software environment used for the reproduction. Runtime
-throughput and sampling-based diversity metrics should be compared within a
-reasonable empirical tolerance rather than as exact equality checks.
+When comparing reproduced metrics with reference CSVs or manuscript values,
+record the command line, seed, model revision, hardware, and software
+environment used for the reproduction. Runtime throughput and sampling-based
+diversity metrics should be compared within a reasonable empirical tolerance
+rather than as exact equality checks.
 
 ## Reviewer Checklist
 
