@@ -1,9 +1,9 @@
 # Experiments
 
-This directory contains artifact reproduction scripts for the paper's
-experiment results. The scripts are organized by experiment group and mapped to
-paper tables. Each experiment has a Linux / macOS shell entrypoint and a Windows
-PowerShell entrypoint.
+This directory contains artifact reproduction scripts for DiverseGuide. The
+scripts cover the OSP primary reproduction path and optional supplementary
+material inherited from the ICFEM 2025 paper experiments. Each experiment has a
+Linux / macOS shell entrypoint and a Windows PowerShell entrypoint.
 
 For the reviewer-facing reproducibility protocol, start with the root
 [REPRODUCIBILITY.md](../REPRODUCIBILITY.md). This file is the detailed command
@@ -12,7 +12,7 @@ reference for the experiment scripts.
 Use the root [README.md](../README.md) for
 repository setup and API context. Use
 [case_study/README.md](case_study/README.md)
-for the isolated paper case-study experiment results (Table 9).
+for the optional automated impact case study.
 
 ## Before You Start
 
@@ -36,33 +36,36 @@ Shared defaults such as the grammar list and model names live in
 [common.sh](common.sh) and
 [common.ps1](common.ps1).
 
-## Paper Table Mapping
+## Experiment Role Map
 
-| Experiment | Linux / macOS | Windows | Paper tables |
-|-----------|----------------|---------|--------------|
-| Sample generation | `1_generation.sh` | `1_generation.ps1` | Produces generated samples used by downstream evaluations |
-| Diversity evaluation | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3) |
-| Efficiency evaluation | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | paper's efficiency-evaluation experiment results (Table 4) |
-| Temperature ablation | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | paper's temperature-ablation experiment results (Table 5, Table 6, Table 7) |
-| Component ablation | `5_component_ablation.sh` | `5_component_ablation.ps1` | paper's component-ablation experiment results (Table 8) |
-| Case study | `case_study/` | `case_study/` | paper's case-study experiment results (Table 9) |
+| Experiment | Role | Linux / macOS | Windows | Output or reference |
+|-----------|------|----------------|---------|---------------------|
+| Sample generation | OSP primary reproduction input | `1_generation.sh` | `1_generation.ps1` | `data/diverse/{model}/`, `data/baseline/{model}/` |
+| Diversity evaluation | OSP primary reproduction result | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | `artifact-results/v0.2.0/primary/diversity.csv` |
+| Efficiency evaluation | OSP primary reproduction result | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | `artifact-results/v0.2.0/primary/runtime.csv` |
+| Case study | Optional automated impact check | `case_study/` | `case_study/` | Generated locally as `case_study_summary.json` |
+| Temperature ablation | Optional extended ICFEM analysis | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
+| Component ablation | Optional extended ICFEM analysis | `5_component_ablation.sh` | `5_component_ablation.ps1` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
 
-Note: Table 5, Table 6, and Table 7 additionally require `microsoft/Phi-4-mini-instruct`
+Note: temperature ablation additionally requires `microsoft/Phi-4-mini-instruct`
 for perplexity evaluation.
 
 ## Dependencies Between Experiments
 
-- `1_generation.*` should run before `2_diversity_evaluation.*`, because Table
-  1, Table 2, and Table 3 (paper's diversity-evaluation experiment results)
-  consume the generated sample files.
+- `1_generation.*` should run before `2_diversity_evaluation.*`, because the
+  diversity evaluation consumes the generated sample files.
 - `3_efficiency_evaluation.*` is independent from the saved generation outputs;
   it measures runtime directly.
-- `4_temperature_ablation.*` is self-contained for the temperature ablation
-  runs and their evaluation.
-- `5_component_ablation.*` is self-contained for the component ablation runs
-  and their evaluation.
-- `case_study/` is intentionally isolated from the repository root environment
-  and has its own README and local dependency setup.
+- `case_study/` is an optional automated impact check. It is intentionally
+  isolated from the repository root environment and has its own README and
+  local dependency setup.
+- `4_temperature_ablation.*` is optional and self-contained for the temperature
+  ablation runs and their evaluation.
+- `5_component_ablation.*` generates the ablated css-color samples, but its
+  default comparison row uses the default diverse css-color samples. Run
+  `1_generation.*` first, or otherwise generate the default css-color diverse
+  samples, before collecting component-ablation results in a clean
+  reproduction.
 
 ## Expected Runtime and Outputs
 
@@ -82,33 +85,50 @@ Outputs:
 - Evaluation summaries are written as structured JSON files under `results/`.
 - Table-oriented CSV summaries are written under `results/tables/` by
   `uv run python scripts/collect_results.py`.
-- Table 9 outputs are described separately in
+- Case-study outputs are described separately in
   [case_study/README.md](case_study/README.md).
 
 ## Recommended Reproduction Order
 
-If you want to reproduce all experiment groups:
+For OSP primary reproduction:
 
 1. Run sample generation.
 2. Run diversity evaluation.
 3. Run efficiency evaluation.
-4. Run temperature ablation.
-5. Run component ablation.
-6. Run the case study for Table 9.
+4. Collect primary CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment diversity`
+   - `uv run python scripts/collect_results.py --experiment runtime`
+5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
+   with `artifact-results/v0.2.0/primary/`.
 
-If you only want one table group, you can usually run just the corresponding
-script pair, except that Table 1, Table 2, and Table 3 depend on the outputs from
-`1_generation.*`.
+For the optional automated impact check:
+
+1. Follow `case_study/README.md`.
+2. Run the case-study package-fetch step for your platform.
+3. Run the case-study runner for your platform.
+4. Inspect `experiments/case_study/case_study_summary.json`.
+
+For optional extended ICFEM reproduction:
+
+1. Run temperature ablation.
+2. Ensure default css-color diverse samples exist by running
+   `experiments/1_generation.*` or an equivalent default css-color generation
+   command.
+3. Run component ablation.
+4. Collect optional CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment temperature_ablation`
+   - `uv run python scripts/collect_results.py --experiment component_ablation`
+5. Compare optional CSV summaries with `artifact-results/v0.2.0/optional/`.
 
 ## Minimal Sanity Check
 
-If you want a lightweight artifact check instead of full paper reproduction:
+If you want a lightweight artifact check instead of full primary reproduction:
 
 1. Complete the setup steps from the root
    [README.md](../README.md).
 2. Run `uv run poe test` from the repository root.
 3. Run one small generation command such as `uv run poe gen css-color -n 10 --stdout-only`.
-4. Run the isolated case study from
+4. Optionally run the isolated case study from
    [case_study/README.md](case_study/README.md).
 
 ## Commands
@@ -218,6 +238,19 @@ results/
     component_ablation.csv
 ```
 
+Author reference CSVs for the v0.2.0 snapshot are tracked under
+`artifact-results/v0.2.0/`:
+
+```text
+artifact-results/v0.2.0/
+  primary/
+    diversity.csv
+    runtime.csv
+  optional/
+    temperature_ablation.csv
+    component_ablation.csv
+```
+
 Run `uv run python scripts/collect_results.py` after all experiment groups have
 finished to collect every CSV summary. If you only reproduced one group, collect
 that table with `--experiment`, for example:
@@ -243,12 +276,12 @@ primary reproduction artifacts.
 ### `2_diversity_evaluation.*`
 
 - Evaluates both diverse and baseline outputs for all four grammars.
-- Used for the paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3).
+- Primary OSP reproduction result for diversity and DFA coverage.
 
 ### `3_efficiency_evaluation.*`
 
 - Measures runtime for both diverse and baseline generation.
-- Used for the paper's efficiency-evaluation experiment results (Table 4).
+- Primary OSP reproduction result for runtime efficiency.
 - The default baseline backend is the internal regex-only generator
   (`--baseline-backend internal`). It uses the project's own mask-only
   constraint processor and is the baseline included in the default reproduction
@@ -266,16 +299,16 @@ uv run --group outlines poe eval-runtime email --baseline --baseline-backend out
 - Regenerates samples at temperature `1.5`.
 - Evaluates diversity metrics and perplexity with
   `microsoft/Phi-4-mini-instruct`.
-- Used for the paper's temperature-ablation experiment results (Table 5, Table 6, Table 7).
+- Optional extended ICFEM analysis for temperature sensitivity.
 
 ### `5_component_ablation.*`
 
 - Runs ablations for `reward`, `penalty`, and `range_scaling`.
 - The shell version uses `timeout 1800`; the PowerShell version mirrors this
   with a job timeout and also respects `TIMEOUT_SECONDS`.
-- Used for the paper's component-ablation experiment results (Table 8).
+- Optional extended ICFEM analysis for method components.
 
 ### `case_study/`
 
-- Independent artifact for the coverage-based case study.
+- Optional automated impact check for generated samples as downstream test inputs.
 - See [case_study/README.md](case_study/README.md).
