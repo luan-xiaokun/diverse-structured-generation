@@ -17,18 +17,24 @@ to each other.
 The repository supports three levels of reproduction:
 
 1. Environment and implementation checks that do not load a language model.
-2. Lightweight generation and evaluation checks.
-3. Full paper-result reproduction for the paper tables.
+2. OSP primary reproduction for the manuscript's main artifact claims.
+3. Optional supplementary reproduction for the case study and extended ICFEM
+   analyses.
 
-Paper table mapping:
+Result-group map:
 
-| Paper result group | Reproduction entry point |
-| --- | --- |
-| Diversity evaluation results, Tables 1-3 | `experiments/2_diversity_evaluation.*` after `experiments/1_generation.*` |
-| Efficiency evaluation results, Table 4 | `experiments/3_efficiency_evaluation.*` |
-| Temperature ablation results, Tables 5-7 | `experiments/4_temperature_ablation.*` |
-| Component ablation results, Table 8 | `experiments/5_component_ablation.*` |
-| Coverage case study results, Table 9 | `experiments/case_study/` |
+| Role | Result group | Entry point | Required for OSP primary reproduction |
+| --- | --- | --- | --- |
+| Primary OSP reproduction | Sample generation | `experiments/1_generation.*` | Yes |
+| Primary OSP reproduction | Diversity and DFA coverage | `experiments/2_diversity_evaluation.*` | Yes |
+| Primary OSP reproduction | Runtime efficiency | `experiments/3_efficiency_evaluation.*` | Yes |
+| Optional automated impact check | Coverage case study | `experiments/case_study/` | No |
+| Optional extended ICFEM analysis | Temperature ablation | `experiments/4_temperature_ablation.*` | No |
+| Optional extended ICFEM analysis | Component ablation | `experiments/5_component_ablation.*` | No |
+
+The primary OSP reproduction focuses on the CSV summaries in
+`artifact-results/v0.2.0/primary/`. Optional extended ICFEM summaries are kept in
+`artifact-results/v0.2.0/optional/`.
 
 Use `experiments/README.md` for exact Linux/macOS and Windows commands.
 
@@ -79,22 +85,39 @@ For a lightweight model-backed generation check:
 uv run poe gen css-color -n 10 --stdout-only
 ```
 
-For the isolated coverage case study, follow
-`experiments/case_study/README.md`. It includes its own environment and expected
-coverage percentages.
+The optional coverage case study is documented in
+`experiments/case_study/README.md`. It includes its own environment, pinned
+package snapshots, and expected coverage percentages.
 
 ## Full Reproduction
 
-The full reproduction workflow is documented in `experiments/README.md`.
+The full command reference is documented in `experiments/README.md`.
 
-Recommended order:
+Recommended OSP primary reproduction order:
 
 1. Run sample generation: `experiments/1_generation.*`.
 2. Run diversity evaluation: `experiments/2_diversity_evaluation.*`.
 3. Run efficiency evaluation: `experiments/3_efficiency_evaluation.*`.
-4. Run temperature ablation: `experiments/4_temperature_ablation.*`.
-5. Run component ablation: `experiments/5_component_ablation.*`.
-6. Run the case study under `experiments/case_study/`.
+4. Collect primary CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment diversity`
+   - `uv run python scripts/collect_results.py --experiment runtime`
+5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
+   with `artifact-results/v0.2.0/primary/`.
+
+Optional automated impact check:
+
+1. Run the case study under `experiments/case_study/`.
+2. Inspect the generated `experiments/case_study/case_study_summary.json`.
+
+Optional extended ICFEM analyses:
+
+1. Run temperature ablation: `experiments/4_temperature_ablation.*`.
+2. Run component ablation: `experiments/5_component_ablation.*`.
+3. Collect optional CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment temperature_ablation`
+   - `uv run python scripts/collect_results.py --experiment component_ablation`
+4. Compare the optional CSVs under `results/tables/` with
+   `artifact-results/v0.2.0/optional/`.
 
 The default efficiency-evaluation baseline is the internal regex-only
 masking backend (`--baseline-backend internal`). The optional Outlines backend
@@ -103,8 +126,8 @@ reported efficiency table and should be written to separate output files.
 
 Approximate runtime on a single GPU is documented in
 `experiments/README.md`. The generation and efficiency experiments are the most
-expensive groups; expect roughly one hour for each of those groups on the
-reference single-GPU workflow.
+expensive primary groups; expect roughly one hour for each of those groups on
+the reference single-GPU workflow.
 
 ## Output Artifacts
 
@@ -126,6 +149,18 @@ results/
   tables/
 ```
 
+Tracked reference CSV summaries are kept under:
+
+```text
+artifact-results/v0.2.0/
+  primary/
+    diversity.csv
+    runtime.csv
+  optional/
+    temperature_ablation.csv
+    component_ablation.csv
+```
+
 After running experiment groups, collect table-oriented CSV summaries with:
 
 ```bash
@@ -139,7 +174,8 @@ uv run python scripts/collect_results.py --experiment diversity
 ```
 
 The JSON result files include reproduction metadata such as timestamp, git
-commit, Python version, platform, and the selected string-kernel backend.
+commit, Python version, platform, and where applicable the selected
+string-kernel backend.
 
 ## Nondeterminism and Tolerance
 
@@ -180,11 +216,25 @@ For a short artifact check:
 2. Run `uv run poe test`, `uv run poe test-rust`, and `uv run poe lint`.
 3. Run the README smoke test.
 4. Run `uv run poe gen css-color -n 10 --stdout-only`.
-5. Run the isolated case-study checks in `experiments/case_study/`.
 
-For full reproduction:
+For OSP primary reproduction:
 
 1. Follow the setup in `README.md`.
-2. Follow the command sequence in `experiments/README.md`.
-3. Collect CSV summaries with `scripts/collect_results.py`.
-4. Compare `results/tables/*.csv` and case-study outputs with the paper tables.
+2. Run `experiments/1_generation.*`.
+3. Run `experiments/2_diversity_evaluation.*`.
+4. Run `experiments/3_efficiency_evaluation.*`.
+5. Collect primary CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment diversity`
+   - `uv run python scripts/collect_results.py --experiment runtime`
+6. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
+   with `artifact-results/v0.2.0/primary/`.
+
+For optional supplementary checks:
+
+1. Run the case study under `experiments/case_study/`.
+2. Run `experiments/4_temperature_ablation.*` and
+   `experiments/5_component_ablation.*` when extended ICFEM analyses are needed.
+3. Collect optional CSV summaries:
+   - `uv run python scripts/collect_results.py --experiment temperature_ablation`
+   - `uv run python scripts/collect_results.py --experiment component_ablation`
+4. Compare optional CSV summaries with `artifact-results/v0.2.0/optional/`.
