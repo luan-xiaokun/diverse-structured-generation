@@ -13,6 +13,11 @@ This repository is the DiverseGuide software artifact for the paper:
 
 It implements a diversity-enhancing method for LLM structured generation constrained by regular expressions.
 
+The canonical software name and Python distribution name are `DiverseGuide` and
+`diverse-guide`. The repository remains
+`luan-xiaokun/diverse-structured-generation` for continuity with the ICFEM 2025
+paper link.
+
 ---
 
 ## Table of Contents
@@ -36,7 +41,7 @@ It implements a diversity-enhancing method for LLM structured generation constra
     - [`StatefulSequenceGeneratorAdapter`](#statefulsequencegeneratoradapter)
     - [Parameters](#parameters)
   - [Running Experiments](#running-experiments)
-    - [Reproducing paper results](#reproducing-paper-results)
+    - [Reproducing OSP artifact results](#reproducing-osp-artifact-results)
   - [Evaluation Backend](#evaluation-backend)
   - [Tests](#tests)
   - [Project Structure](#project-structure)
@@ -414,24 +419,39 @@ By default, generated samples are saved to `data/diverse/{model}/` (diverse)
 or `data/baseline/{model}/` (baseline).
 Use `--output` to override the output path, or `--stdout-only` to skip writing JSON files.
 
-### Reproducing paper results
+### Reproducing OSP artifact results
 
 For the reviewer-facing reproducibility protocol, start with
 [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
-Reproduction scripts live in [experiments/README.md](experiments/README.md).
-The document maps scripts to paper tables and provides Linux / macOS and Windows entrypoints.
+Reference CSV summaries for the v0.2.0 artifact snapshot are tracked under
+[artifact-results/v0.2.0/](artifact-results/v0.2.0/). Regenerated local outputs
+are written under ignored `results/`; primary results can be summarized with
+`uv run python scripts/collect_results.py --experiment diversity` and
+`uv run python scripts/collect_results.py --experiment runtime`.
 
-Table mapping summary:
+The OSP primary reproduction path is:
 
-- paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3): `2_diversity_evaluation.*`
-- paper's efficiency-evaluation experiment results (Table 4): `3_efficiency_evaluation.*`
-- paper's temperature-ablation experiment results (Table 5, Table 6, Table 7): `4_temperature_ablation.*`
-- paper's component-ablation experiment results (Table 8): `5_component_ablation.*`
-- paper's case-study experiment results (Table 9): `experiments/case_study/`
+1. Generate baseline and DiverseGuide samples with `experiments/1_generation.*`.
+2. Evaluate diversity and DFA coverage with `experiments/2_diversity_evaluation.*`.
+3. Measure runtime with `experiments/3_efficiency_evaluation.*`.
+4. Run `uv run python scripts/collect_results.py --experiment diversity` and
+   `uv run python scripts/collect_results.py --experiment runtime`.
+5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
+   with `artifact-results/v0.2.0/primary/`.
 
-If you want a lightweight artifact check instead of full reproduction,
-start with `Minimal Sanity Check` in [experiments/README.md](experiments/README.md).
+Optional reproduction material remains available:
+
+| Role | Entry point | Reference summary |
+| --- | --- | --- |
+| Optional automated impact check | `experiments/case_study/` | Generated locally as `experiments/case_study/case_study_summary.json` |
+| Optional extended ICFEM temperature analysis | `experiments/4_temperature_ablation.*` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
+| Optional extended ICFEM component analysis | `experiments/5_component_ablation.*` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
+
+The diversity results should be interpreted through automata-oriented coverage
+metrics first: DFA state coverage, transition coverage, and path coverage.
+String-diversity metrics such as Vendi score are task-sensitive and are not
+expected to improve for every grammar.
 
 ---
 
