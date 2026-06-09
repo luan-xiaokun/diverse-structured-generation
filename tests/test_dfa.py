@@ -2,6 +2,9 @@
 
 import pickle
 
+import pytest
+import torch
+
 from regex_dfa_guide import DiverseGuideDFA
 
 # ---------------------------------------------------------------------------
@@ -184,6 +187,77 @@ def test_update_and_reset_local_state_counter(dfa_multi):
     assert all(c == 1 for c in penalty_counts_after)
 
 
+def _expected_adjustments_from_counts(
+    reward_counts: list[int],
+    penalty_counts: list[int],
+    beta: float,
+    no_reward: bool = False,
+    no_penalty: bool = False,
+) -> torch.Tensor:
+    reward_tensor = torch.tensor(reward_counts, dtype=torch.float)
+    penalty_tensor = torch.tensor(penalty_counts, dtype=torch.float)
+    reward = torch.log(1 + reward_tensor.sum()) / (1 + reward_tensor)
+    penalty = beta * penalty_tensor**2
+    if no_reward:
+        reward = torch.ones_like(reward_tensor)
+    if no_penalty:
+        penalty = torch.ones_like(penalty_tensor)
+    return reward / penalty
+
+
+def test_compute_adjustments_matches_python_formula(dfa_multi):
+    initial = dfa_multi.get_initial_state()
+    dfa_multi.update_path_counter("ab")
+    dfa_multi.update_local_state_counter(initial, 10)
+    dfa_multi.update_local_state_counter(initial, 10)
+
+    token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
+    adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
+        initial, 3.0, False, False
+    )
+
+    assert adjustment_token_ids == token_ids
+    expected = _expected_adjustments_from_counts(
+        list(reward_counts), list(penalty_counts), beta=3.0
+    )
+    actual = torch.tensor(adjustments, dtype=torch.float)
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("no_reward", "no_penalty"),
+    [(True, False), (False, True), (True, True)],
+)
+def test_compute_adjustments_ablation_flags_match_python_formula(
+    dfa_multi, no_reward, no_penalty
+):
+    initial = dfa_multi.get_initial_state()
+    dfa_multi.update_path_counter("ab")
+    dfa_multi.update_local_state_counter(initial, 10)
+    dfa_multi.update_local_state_counter(initial, 10)
+
+    token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
+    adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
+        initial, 3.0, no_reward, no_penalty
+    )
+
+    assert adjustment_token_ids == token_ids
+    expected = _expected_adjustments_from_counts(
+        list(reward_counts),
+        list(penalty_counts),
+        beta=3.0,
+        no_reward=no_reward,
+        no_penalty=no_penalty,
+    )
+    actual = torch.tensor(adjustments, dtype=torch.float)
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+
+
+def test_compute_adjustments_invalid_state_raises_value_error(dfa_multi):
+    with pytest.raises(ValueError):
+        dfa_multi.compute_adjustments(2**32 - 1, 3.0, False, False)
+
+
 # ---------------------------------------------------------------------------
 # fork()
 # ---------------------------------------------------------------------------
@@ -248,7 +322,24 @@ def test_pickle_roundtrip(dfa_multi):
 
 
 def test_pickle_roundtrip_with_counters(dfa_multi):
+    initial = dfa_multi.get_initial_state()
+    token_id = dfa_multi.get_allowed_token_ids(initial)[0]
     dfa_multi.update_path_counter("ab")
+    dfa_multi.update_local_state_counter(initial, token_id)
+
+    allowed_before = dfa_multi.get_allowed_token_ids(initial)
+    next_state_before = dfa_multi.get_next_token_state(initial, token_id)
+    byte_state_sequence_before = dfa_multi.get_byte_state_sequence(initial, token_id)
+    counts_before = dfa_multi.compute_counts(initial)
+
     data = pickle.dumps(dfa_multi)
     restored = pickle.loads(data)
+
     assert restored == dfa_multi
+    assert restored.get_allowed_token_ids(initial) == allowed_before
+    assert restored.get_next_token_state(initial, token_id) == next_state_before
+    assert (
+        restored.get_byte_state_sequence(initial, token_id)
+        == byte_state_sequence_before
+    )
+    assert restored.compute_counts(initial) == counts_before

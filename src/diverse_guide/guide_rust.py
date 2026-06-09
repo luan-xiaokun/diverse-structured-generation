@@ -243,6 +243,42 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self._processed_lengths_by_row[row] = processed
         return state
 
+    def _compute_adjustments_from_counts(
+        self,
+        reward_counts: list[int],
+        penalty_counts: list[int],
+    ) -> torch.FloatTensor:
+        reward_counts_tensor = torch.tensor(reward_counts, dtype=torch.float)
+        penalty_counts_tensor = torch.tensor(penalty_counts, dtype=torch.float)
+        reward = torch.log(1 + reward_counts_tensor.sum()) / (1 + reward_counts_tensor)
+        penalty = self.beta * penalty_counts_tensor**2
+
+        if self.no_reward:
+            reward = torch.ones_like(reward_counts_tensor)
+        if self.no_penalty:
+            penalty = torch.ones_like(penalty_counts_tensor)
+
+        return reward / penalty
+
+    def _compute_row_allowed_tokens_and_adjustments(
+        self, guide_state: int
+    ) -> tuple[torch.LongTensor, torch.FloatTensor]:
+        if guide_state == -1:
+            allowed_tokens = [self.guide.eos_token_id]
+            adjustments = self._compute_adjustments_from_counts([0], [1])
+            return torch.tensor(allowed_tokens, dtype=torch.long), adjustments
+
+        allowed_tokens, adjustments = self.dfa.compute_adjustments(
+            guide_state,
+            self.beta,
+            self.no_reward,
+            self.no_penalty,
+        )
+        return (
+            torch.tensor(allowed_tokens, dtype=torch.long),
+            torch.tensor(adjustments, dtype=torch.float),
+        )
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
@@ -262,28 +298,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         batch_indices = []
         adjusts = []
         for i, guide_state in enumerate(sequence_states):
-            if guide_state == -1:
-                allowed_tokens = [self.guide.eos_token_id]
-                reward_counts = [0]
-                penalty_counts = [1]
-            else:
-                allowed_tokens, reward_counts, penalty_counts = self.dfa.compute_counts(
-                    guide_state
-                )
-            allowed_tokens = torch.tensor(allowed_tokens, dtype=torch.long)
+            allowed_tokens, adjustments = (
+                self._compute_row_allowed_tokens_and_adjustments(guide_state)
+            )
             allowed_tokens_batch.append(allowed_tokens)
             batch_indices.append(torch.full_like(allowed_tokens, i))
-            reward_counts = torch.tensor(reward_counts, dtype=torch.float)
-            penalty_counts = torch.tensor(penalty_counts, dtype=torch.float)
-            reward = torch.log(1 + reward_counts.sum()) / (1 + reward_counts)
-            penalty = self.beta * penalty_counts**2
-
-            if self.no_reward:
-                reward = torch.ones_like(reward_counts)
-            if self.no_penalty:
-                penalty = torch.ones_like(penalty_counts)
-
-            adjusts.append(reward / penalty)
+            adjusts.append(adjustments)
 
         allowed_tokens_concat = torch.cat(allowed_tokens_batch).to(device)
         batch_indices_concat = torch.cat(batch_indices).to(device)
