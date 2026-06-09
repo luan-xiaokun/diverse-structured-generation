@@ -150,6 +150,11 @@ def parse_args():
         default=None,
         help="Seed Python, NumPy, and PyTorch before runtime generation.",
     )
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Load model/tokenizer from the local Hugging Face cache only.",
+    )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
     parser.add_argument(
         "--baseline-backend",
@@ -186,9 +191,16 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=dtype).to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        dtype=dtype,
+        local_files_only=args.local_files_only,
+    ).to(device)
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        local_files_only=args.local_files_only,
+    )
 
     generation_kwargs = {}
     if args.top_k is not None:

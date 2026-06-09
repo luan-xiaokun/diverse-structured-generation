@@ -27,6 +27,7 @@ def _args(**overrides):
         "baseline": True,
         "baseline_backend": "internal",
         "seed": None,
+        "local_files_only": False,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -83,6 +84,18 @@ def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
 
     with pytest.raises(SystemExit):
         parse_args()
+
+
+def test_parse_args_accepts_local_files_only(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval_runtime.py", "css-color", "--local-files-only"],
+    )
+
+    args = parse_args()
+
+    assert args.local_files_only is True
 
 
 def test_require_outlines_version_accepts_expected_version(monkeypatch):
@@ -292,6 +305,63 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["setting"] == "diverse"
     assert saved["parameters"]["baseline_backend"] == "internal"
+
+
+def test_main_forwards_local_files_only_to_model_and_tokenizer(
+    monkeypatch, tmp_path
+):
+    calls = {}
+
+    class FakeModel(_FakeModel):
+        pass
+
+    def fake_model_from_pretrained(*args, **kwargs):
+        calls["model_kwargs"] = kwargs
+        return FakeModel()
+
+    def fake_tokenizer_from_pretrained(*args, **kwargs):
+        calls["tokenizer_kwargs"] = kwargs
+        return _FakeTokenizer()
+
+    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
+        def generate(prompt, max_tokens=None):
+            return "abcde"
+
+        return generate
+
+    monkeypatch.setattr(eval_runtime.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        eval_runtime.AutoModelForCausalLM,
+        "from_pretrained",
+        fake_model_from_pretrained,
+    )
+    monkeypatch.setattr(
+        eval_runtime.AutoTokenizer,
+        "from_pretrained",
+        fake_tokenizer_from_pretrained,
+    )
+    monkeypatch.setattr(eval_runtime, "DiverseGuide", fake_diverse_guide)
+    output = tmp_path / "runtime.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "eval_runtime.py",
+            "css-color",
+            "-n",
+            "5",
+            "--max-tokens",
+            "2",
+            "--local-files-only",
+            "--output",
+            str(output),
+        ],
+    )
+
+    eval_runtime.main()
+
+    assert calls["model_kwargs"]["local_files_only"] is True
+    assert calls["tokenizer_kwargs"]["local_files_only"] is True
 
 
 def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_path):
