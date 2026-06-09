@@ -114,6 +114,48 @@ def test_zero_counter_adjustment_zero(mock_tokenizer):
     )
 
 
+def test_counter_populated_compute_counts_equivalent(mock_tokenizer):
+    """Rust compute_counts should match the Python counter semantics by token id."""
+    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
+    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
+    state = py_proc.guide.initial_state
+
+    path_states = list(py_proc.guide.dfa.get_state_sequence("ab"))
+    for transition in zip(path_states, path_states[1:]):
+        py_proc.transition_counter[transition] += 1
+    rs_proc.dfa.update_path_counter("ab")
+
+    for _ in range(2):
+        local_states = py_proc.guide.get_state_sequence_from_token_id(state, 10)
+        for inner_state in local_states[1:]:
+            py_proc.local_state_counter[inner_state] += 1
+        rs_proc.dfa.update_local_state_counter(state, 10)
+
+    py_counts = {}
+    for token_id in py_proc.guide.get_next_instruction(state):
+        state_seq = py_proc.guide.get_state_sequence_from_token_id(state, token_id)
+        transitions = list(zip(state_seq, state_seq[1:]))
+        reward_count = (
+            min(py_proc.transition_counter[t] for t in transitions)
+            if transitions
+            else 0
+        )
+        local_count = max(
+            (py_proc.local_state_counter[s] for s in state_seq[1:]), default=0
+        )
+        py_counts[token_id] = (reward_count, max(1, local_count))
+
+    token_ids, reward_counts, penalty_counts = rs_proc.dfa.compute_counts(state)
+    rs_counts = {
+        token_id: (reward_count, penalty_count)
+        for token_id, reward_count, penalty_count in zip(
+            token_ids, reward_counts, penalty_counts, strict=True
+        )
+    }
+
+    assert rs_counts == py_counts
+
+
 # ---------------------------------------------------------------------------
 # DFA state sequence used by update_generated_content
 # ---------------------------------------------------------------------------
