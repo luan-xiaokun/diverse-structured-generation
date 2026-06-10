@@ -153,8 +153,8 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                                     {1 + c^{\\text{path}}_i}
                        \\cdot \\frac{1}{\\beta \\cdot (c^{\\text{local}}_i)^2}
 
-    The path counter (global, cross-sequence) is updated externally via
-    :meth:`StatefulSequenceGeneratorAdapter.update_generated_content`.
+    The path counter (global, cross-sequence) is updated incrementally as newly
+    generated token ids are consumed.
     The local counter (per ``model.generate`` call) is reset by :meth:`reset`.
     """
 
@@ -236,6 +236,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                 except ValueError:
                     state = -1
                 if state != -1:
+                    self.dfa.update_path_counter_for_token(prev_state, token_id)
                     self.dfa.update_local_state_counter(prev_state, token_id)
             processed += 1
 
@@ -332,17 +333,16 @@ class StatefulSequenceGeneratorAdapter:
     stateful generation.
 
     Maintains a cross-call path counter so that successive calls (or batches)
-    are diversified relative to all previously generated sequences.
+    are diversified relative to token paths generated so far.
 
     Typical usage::
 
         generator = DiverseGuide(model, tokenizer, regex_str)
         for _ in range(100):
             text = generator(prompt, max_tokens=40)
-            generator.update_generated_content(text)  # update global path counter
 
-    Or more conveniently via :meth:`generate_batch`, which updates counters
-    automatically.
+    The logits processor updates counters automatically from newly generated
+    token ids during generation.
     """
 
     def __init__(
@@ -438,19 +438,17 @@ class StatefulSequenceGeneratorAdapter:
             new_ids = output_ids[i, prompt_len:]
             text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
             results.append(text)
-            self.logits_processor.dfa.update_path_counter(text)
 
         return results
 
     def update_generated_content(self, generated_content: str) -> None:
         """Update the global path counter with a previously generated string.
 
-        Must be called after each successful generation when using
-        :meth:`__call__` directly, so that subsequent calls are diversified
-        relative to *generated_content*.  Not needed when using
-        :meth:`generate_batch`, which updates counters automatically.
+        Deprecated. Runtime path counters are updated incrementally from newly
+        generated token ids inside the logits processor, avoiding full-text
+        replay and tokenizer re-decoding ambiguity.
         """
-        self.logits_processor.dfa.update_path_counter(generated_content)
+        _ = generated_content
 
 
 class DiverseGuide(StatefulSequenceGeneratorAdapter):

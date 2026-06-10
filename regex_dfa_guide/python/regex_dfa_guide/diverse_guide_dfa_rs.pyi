@@ -49,6 +49,10 @@ class DiverseGuideDFA:
         """Updates the path counter for the given string."""
         ...
 
+    def update_path_counter_for_token(self, state: int, token_id: int) -> None:
+        """Updates the path counter after consuming one token from state."""
+        ...
+
     def update_local_state_counter(self, state: int, token_id: int) -> None:
         """Updates the local state counter after generating a new token."""
         ...

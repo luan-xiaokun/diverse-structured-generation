@@ -643,6 +643,22 @@ impl DiverseGuideDFA {
         Ok(())
     }
 
+    pub fn update_path_counter_for_token(
+        &mut self,
+        state: StateId,
+        token_id: TokenId,
+    ) -> Result<()> {
+        let state_sequence = self.index.get_byte_state_sequence(state, token_id)?;
+        for window in state_sequence.windows(2) {
+            if let [from_state, to_state] = window {
+                if let Some(&edge_idx) = self.index.edge_to_idx.get(&(*from_state, *to_state)) {
+                    self.path_counter[edge_idx] += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_local_state_counter(&mut self, state: StateId, token_id: TokenId) -> Result<()> {
         if let Some(info) = self.index.find_allowed_token_info(state, token_id) {
             for &state_idx in &info.state_indices {

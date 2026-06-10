@@ -160,6 +160,21 @@ def test_update_and_compute_path_counter(dfa_multi):
     assert reward_counts[idx] >= 1
 
 
+def test_update_path_counter_for_token_matches_string_replay(vocab_ab):
+    dfa_from_string = DiverseGuideDFA("(?:[ab]+)$", 99, vocab_ab)
+    dfa_from_token = DiverseGuideDFA("(?:[ab]+)$", 99, vocab_ab)
+
+    initial = dfa_from_token.get_initial_state()
+    dfa_from_string.update_path_counter("a")
+    dfa_from_token.update_path_counter_for_token(initial, 10)
+
+    token_ids, string_reward_counts, _ = dfa_from_string.compute_counts(initial)
+    _, token_reward_counts, _ = dfa_from_token.compute_counts(initial)
+    assert dict(zip(token_ids, string_reward_counts)) == dict(
+        zip(token_ids, token_reward_counts)
+    )
+
+
 def test_reset_path_counter(dfa_multi):
     dfa_multi.update_path_counter("a")
     dfa_multi.reset_path_counter()
