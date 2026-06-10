@@ -322,7 +322,7 @@ run_one() {
   printf '[cmd]' >"$log_file"
   printf ' %q' "${cmd[@]}" >>"$log_file"
   printf '\n' >>"$log_file"
-  "${cmd[@]}" >>"$log_file" 2>&1
+  "${cmd[@]}" 2>&1 | tee -a "$log_file"
 
   existing="$(sample_count_in_file "$output_path")"
   if [[ "$REQUIRE_CUDA" == "1" ]]; then
