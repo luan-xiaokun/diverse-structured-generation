@@ -7,7 +7,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 DEFAULT_MODEL="Qwen/Qwen2.5-1.5B-Instruct"
 DEFAULT_PPL_MODEL="microsoft/Phi-4-mini-instruct"
 DEFAULT_SEED="${SEED:-}"
-GRAMMARS=("email" "css-color" "json" "no-bomb")
+GRAMMARS=("email" "css-color" "json" "no-bomb" "semver" "api-route")
 
 cd "$REPO_ROOT"
 
@@ -20,6 +20,9 @@ grammar_extra_args() {
     case "$grammar" in
         json)
             printf '%s\n' "--max-tokens" "54"
+            ;;
+        semver|api-route)
+            printf '%s\n' "--max-tokens" "24"
             ;;
     esac
 }

@@ -29,6 +29,8 @@ DEFAULT_PREFIXES = {
     "email": ("", "a", "a@", "a@b", "a@b."),
     "json": ("", '{"name"', '{"name":', '{"name":"A"', '{"name":"A","gender":'),
     "no-bomb": ("", "a", "bo", "bom", "safe"),
+    "semver": ("", "1", "1.", "1.2.", "1.2.3"),
+    "api-route": ("", "/", "/api/", "/api/v1/", "/api/v1/users/"),
 }
 
 

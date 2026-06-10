@@ -7,7 +7,7 @@ Set-Location $RepoRoot
 $script:DefaultModel = "Qwen/Qwen2.5-1.5B-Instruct"
 $script:DefaultPplModel = "microsoft/Phi-4-mini-instruct"
 $script:DefaultSeed = $env:SEED
-$script:Grammars = @("email", "css-color", "json", "no-bomb")
+$script:Grammars = @("email", "css-color", "json", "no-bomb", "semver", "api-route")
 
 function Invoke-Poe {
     param(
@@ -23,6 +23,8 @@ function Get-GrammarExtraArgs {
 
     switch ($Grammar) {
         "json" { return @("--max-tokens", "54") }
+        "semver" { return @("--max-tokens", "24") }
+        "api-route" { return @("--max-tokens", "24") }
         default { return @() }
     }
 }

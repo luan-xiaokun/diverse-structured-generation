@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 import scripts.generate_re as generate_re
+from regex_dfa_guide import DiverseGuideDFA
 from scripts.generate_re import GeneratedData, set_generation_seed
 
 
@@ -19,6 +20,9 @@ def test_generated_data_round_trips_seed():
         top_p=None,
         temperature=None,
         seed=42,
+        device="cuda",
+        model_parameter_device="cuda:0",
+        gamma=0.2,
         completion_bias_eta=0.2,
         path_frequency_estimator="min",
         baseline_backend="internal",
@@ -33,11 +37,17 @@ def test_generated_data_round_trips_seed():
     restored = GeneratedData.from_dict(payload)
 
     assert payload["seed"] == 42
+    assert payload["device"] == "cuda"
+    assert payload["model_parameter_device"] == "cuda:0"
+    assert payload["gamma"] == 0.2
     assert payload["completion_bias_eta"] == 0.2
     assert payload["path_frequency_estimator"] == "min"
     assert payload["baseline_backend"] == "internal"
     assert payload["elapsed_seconds"] == 12.5
     assert restored.seed == 42
+    assert restored.device == "cuda"
+    assert restored.model_parameter_device == "cuda:0"
+    assert restored.gamma == 0.2
     assert restored.completion_bias_eta == 0.2
     assert restored.path_frequency_estimator == "min"
     assert restored.baseline_backend == "internal"
@@ -62,6 +72,9 @@ def test_generated_data_accepts_legacy_payload_without_seed():
     )
 
     assert restored.seed is None
+    assert restored.device is None
+    assert restored.model_parameter_device is None
+    assert restored.gamma == 0.15
     assert restored.completion_bias_eta == 0.15
     assert restored.path_frequency_estimator == "harmonic"
     assert restored.baseline_backend == "internal"
@@ -132,6 +145,18 @@ def test_parse_args_accepts_completion_bias_eta(monkeypatch):
     assert args.completion_bias_eta == pytest.approx(0.2)
 
 
+def test_parse_args_accepts_gamma(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--gamma", "0.1666667"],
+    )
+
+    args = generate_re.parse_args()
+
+    assert args.gamma == pytest.approx(0.1666667)
+
+
 def test_parse_args_accepts_path_frequency_estimator(monkeypatch):
     monkeypatch.setattr(
         sys,
@@ -153,6 +178,43 @@ def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
 
     with pytest.raises(SystemExit):
         generate_re.parse_args()
+
+
+@pytest.mark.parametrize(
+    ("grammar", "accepted", "rejected"),
+    [
+        (
+            "semver",
+            ["1.2.3", "0.0.1-alpha.1+build-5"],
+            ["01.2.3", "1.2.3+"],
+        ),
+        (
+            "api-route",
+            [
+                "/users/{id}",
+                "/api/v1/users/:user_id/orders/{order_id}",
+                "/api/beta/orgs/<org>/repos/{repo}/issues/:issue_id",
+                "/assets/**/metadata",
+                "/search?q={query}&sort=asc&page=2",
+            ],
+            ["users/{id}", "/api/v0/users/{id}", "/search?q="],
+        ),
+    ],
+)
+def test_new_regex_grammars_compile_and_match_expected_samples(
+    grammar, accepted, rejected
+):
+    dfa = DiverseGuideDFA(f"(?:{generate_re.GRAMMAR_REGEX[grammar]})$", 2**32 - 1, {})
+
+    for sample in accepted:
+        assert dfa.is_final_state(dfa.get_state_sequence(sample)[-1]), sample
+
+    for sample in rejected:
+        try:
+            is_match = dfa.is_final_state(dfa.get_state_sequence(sample)[-1])
+        except ValueError:
+            is_match = False
+        assert not is_match, sample
 
 
 def test_main_forwards_local_files_only_and_records_generation_metrics(
@@ -234,6 +296,7 @@ def test_main_forwards_local_files_only_and_records_generation_metrics(
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert calls["model_kwargs"]["local_files_only"] is True
     assert calls["tokenizer_kwargs"]["local_files_only"] is True
+    assert calls["guide_kwargs"]["gamma"] == pytest.approx(0.15)
     assert calls["guide_kwargs"]["completion_bias_eta"] == pytest.approx(0.15)
     assert calls["guide_kwargs"]["path_frequency_estimator"] == "harmonic"
     assert calls["guide_kwargs"]["ablation_component"] is None
