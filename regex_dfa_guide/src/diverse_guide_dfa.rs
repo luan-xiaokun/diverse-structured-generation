@@ -78,7 +78,7 @@ struct AllowedTokenInfo {
 
 #[derive(Debug, Default)]
 struct VocabTrieNode {
-    children: HashMap<Byte, usize>,
+    children: Vec<(Byte, usize)>,
     token_ids: Vec<TokenId>,
 }
 
@@ -233,12 +233,16 @@ impl DfaIndex {
                 .expect("token id collected from vocabulary must exist");
             let mut node_idx = 0;
             for &byte in token_str.as_bytes() {
-                node_idx = if let Some(&child_idx) = trie[node_idx].children.get(&byte) {
+                node_idx = if let Some(&(_, child_idx)) = trie[node_idx]
+                    .children
+                    .iter()
+                    .find(|(child_byte, _)| *child_byte == byte)
+                {
                     child_idx
                 } else {
                     let child_idx = trie.len();
                     trie.push(VocabTrieNode::default());
-                    trie[node_idx].children.insert(byte, child_idx);
+                    trie[node_idx].children.push((byte, child_idx));
                     child_idx
                 };
             }
@@ -301,7 +305,7 @@ impl DfaIndex {
         let Some(transitions) = byte_transitions.get(&dfa_state) else {
             return;
         };
-        for (&byte, &child_idx) in &vocab_trie[node_idx].children {
+        for &(byte, child_idx) in &vocab_trie[node_idx].children {
             if let Some(&next_state) = transitions.get(&byte) {
                 state_path.push(next_state);
                 Self::walk_vocabulary_trie_from_state(
