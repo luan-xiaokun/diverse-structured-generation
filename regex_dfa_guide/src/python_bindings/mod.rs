@@ -25,11 +25,7 @@ fn map_poison_error_to_pyerr<G>(_: PoisonError<G>) -> PyErr {
 #[pymethods]
 impl PyDiverseGuideDFA {
     #[new]
-    fn __new__(
-        regex: &str,
-        eos_token_id: u64,
-        vocabulary: HashMap<u64, String>,
-    ) -> PyResult<Self> {
+    fn __new__(regex: &str, eos_token_id: u64, vocabulary: HashMap<u64, String>) -> PyResult<Self> {
         DiverseGuideDFA::new(regex, eos_token_id, vocabulary)
             .map(|x| PyDiverseGuideDFA(Arc::new(RwLock::new(x))))
             .map_err(Into::into)
@@ -116,6 +112,12 @@ impl PyDiverseGuideDFA {
         Ok(())
     }
 
+    fn update_path_counter_for_token(&self, state: u32, token_id: u64) -> PyResult<()> {
+        let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
+        dfa_guard.update_path_counter_for_token(state, token_id)?;
+        Ok(())
+    }
+
     fn update_local_state_counter(&self, state: u32, token_id: u64) -> PyResult<()> {
         let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
         dfa_guard.update_local_state_counter(state, token_id)?;
@@ -137,7 +139,23 @@ impl PyDiverseGuideDFA {
     fn compute_counts(&self, state: u32) -> PyResult<(Vec<u64>, Vec<u32>, Vec<u32>)> {
         let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
         let counts = dfa_guard.compute_counts(state)?;
-        Ok((counts.token_ids, counts.reward_counts, counts.penalty_counts))
+        Ok((
+            counts.token_ids,
+            counts.reward_counts,
+            counts.penalty_counts,
+        ))
+    }
+
+    fn compute_adjustments(
+        &self,
+        state: u32,
+        beta: f32,
+        no_reward: bool,
+        no_penalty: bool,
+    ) -> PyResult<(Vec<u64>, Vec<f32>)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let adjustments = dfa_guard.compute_adjustments(state, beta, no_reward, no_penalty)?;
+        Ok((adjustments.token_ids, adjustments.adjustments))
     }
 
     fn __repr__(&self) -> PyResult<String> {
@@ -166,8 +184,8 @@ impl PyDiverseGuideDFA {
             let cls = PyModule::import(py, "regex_dfa_guide.regex_dfa_guide_rs")?
                 .getattr("DiverseGuideDFA")?;
             let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
-            let binary_data: Vec<u8> =
-                bincode::encode_to_vec(&*dfa_guard, config::standard()).map_err(|e| {
+            let binary_data: Vec<u8> = bincode::encode_to_vec(&*dfa_guard, config::standard())
+                .map_err(|e| {
                     PyErr::new::<PyValueError, _>(format!(
                         "Serialization of DiverseGuideDFA failed: {}",
                         e

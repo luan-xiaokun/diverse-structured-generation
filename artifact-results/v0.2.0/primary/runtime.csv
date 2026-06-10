@@ -1,0 +1,9 @@
+experiment,setting,baseline_backend,grammar,model,target_tokens,generated_tokens,seconds,tokens_per_second,max_tokens,temperature,seed
+runtime,baseline,internal,css-color,Qwen/Qwen2.5-1.5B-Instruct,2000,2003,50.574273109436035,39.60511692705445,60,,42
+runtime,baseline,internal,email,Qwen/Qwen2.5-1.5B-Instruct,2000,2041,51.650293827056885,39.51574809688356,60,,42
+runtime,baseline,internal,json,Qwen/Qwen2.5-1.5B-Instruct,2000,2021,62.41883826255798,32.37804573514947,60,,42
+runtime,baseline,internal,no-bomb,Qwen/Qwen2.5-1.5B-Instruct,2000,2040,61.210410356521606,33.32766416885572,60,,42
+runtime,diverse,internal,css-color,Qwen/Qwen2.5-1.5B-Instruct,2000,2003,55.767693281173706,35.916852251735165,60,,42
+runtime,diverse,internal,email,Qwen/Qwen2.5-1.5B-Instruct,2000,2041,83.66645574569702,24.39448380846429,60,,42
+runtime,diverse,internal,json,Qwen/Qwen2.5-1.5B-Instruct,2000,2021,121.8349061012268,16.588021156439744,60,,42
+runtime,diverse,internal,no-bomb,Qwen/Qwen2.5-1.5B-Instruct,2000,2040,143.56074619293213,14.210012514552076,60,,42

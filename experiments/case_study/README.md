@@ -1,8 +1,8 @@
 # Case Study
 
-This directory is a self-contained case study used in the research project to
-compare how different generated input sets affect coverage percentage in two
-open-source Python libraries:
+This directory is an optional automated impact check for DiverseGuide-generated
+samples. It compares how baseline and diverse generated input sets affect
+coverage percentage in two open-source Python libraries:
 
 - `email_validator`
 - `webcolors`
@@ -11,6 +11,11 @@ The study runs the same harness on two datasets per domain:
 
 - `baseline`
 - `diverse`
+
+For OSP review, this case study is supplementary evidence that diverse
+structured samples can be useful as downstream test inputs. It is not required
+for the primary reproduction path, which is documented in the root
+`REPRODUCIBILITY.md`.
 
 The current observed total coverage percentages from the official workflow are:
 
@@ -45,25 +50,24 @@ Create and use the local virtual environment inside this directory.
 
 ### Linux / macOS
 
-These instructions expect `make` to be installed. On most Linux distributions
-it is already available or provided by packages such as `build-essential` or
-`base-devel`. On macOS, `make` is usually available after installing the Xcode
-Command Line Tools.
+From a clean clone, create the local virtual environment and fetch the pinned
+package snapshots:
 
 ```bash
 cd experiments/case_study
 uv sync
-make test
+bash fetch_packages.sh
 ```
 
 ### Windows
 
-Windows does not require `make`. Use PowerShell from this directory:
+From a clean clone, create the local virtual environment and fetch the pinned
+package snapshots:
 
 ```powershell
 cd experiments/case_study
 uv sync
-.venv\Scripts\python.exe -m pytest -q tests
+.\fetch_packages.ps1
 ```
 
 ## Run
@@ -78,7 +82,7 @@ bash run_case_study.sh
 ```
 
 ```bash
-make run
+make -C experiments/case_study run
 ```
 
 ### Windows
@@ -103,10 +107,14 @@ It writes per-run coverage data to `.coverage.*`, JSON reports to
 
 ## Refresh Pinned Packages
 
+The fetch scripts recreate the ignored `email_validator/` and `webcolors/`
+directories from pinned upstream revisions. Run them before the case study in a
+clean clone.
+
 ### Linux / macOS
 
 ```bash
-make refresh
+make -C experiments/case_study refresh
 ```
 
 Or run the script directly:
@@ -140,17 +148,19 @@ measured.
 For Linux / macOS:
 
 ```bash
+cd experiments/case_study
+make refresh
 make test
 make run
-make refresh
 make clean
 ```
 
 For Windows:
 
 ```powershell
+cd experiments/case_study
 uv sync
-.\run_case_study.ps1
 .\fetch_packages.ps1
+.\run_case_study.ps1
 .venv\Scripts\python.exe -m pytest -q tests
 ```

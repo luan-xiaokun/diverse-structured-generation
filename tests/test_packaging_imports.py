@@ -2,6 +2,12 @@
 
 import importlib.util
 
+from diverse_guide import DiverseGuide
+
+
+def test_public_diverseguide_api_is_exported():
+    assert DiverseGuide.__name__ == "DiverseGuide"
+
 
 def test_evaluation_modules_use_package_namespace():
     assert importlib.util.find_spec("diverse_guide.evaluation.metrics") is not None

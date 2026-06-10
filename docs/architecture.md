@@ -23,7 +23,8 @@ it is not required to generate constrained samples.
 
 The public entry points are exported from `src/diverse_guide/__init__.py`:
 
-- `diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **kwargs)`
+- `DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **kwargs)`
+- `diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **kwargs)` as a compatibility helper
 - `baseline_regex(model, tokenizer, regex_str, **kwargs)`
 - `StatefulSequenceGeneratorAdapter`
 - `DiverseRegexLogitsProcessor`
@@ -32,7 +33,7 @@ The default implementation is Rust-backed:
 
 ```text
 user code
-  -> diverse_regex(...) or baseline_regex(...)
+  -> DiverseGuide(...) or baseline_regex(...)
   -> DiverseRegexLogitsProcessor
   -> DiverseRegexGuide
   -> regex_dfa_guide.DiverseGuideDFA
@@ -104,7 +105,7 @@ The `beta` parameter scales the local penalty. The default internal baseline is
 implemented separately by `RegexMaskLogitsProcessor` so runtime comparisons do
 not include diversity-count computation in the baseline path.
 
-The ablation options in `diverse_regex(..., ablation_component=...)` disable
+The ablation options in `DiverseGuide(..., ablation_component=...)` disable
 individual parts of this adjustment for experiment scripts:
 
 - `reward`
@@ -131,7 +132,7 @@ Experiment scripts are thin command-line wrappers around the package API.
 
 ```text
 scripts/generate_re.py
-  -> diverse_guide.diverse_regex / baseline_regex
+  -> diverse_guide.DiverseGuide / baseline_regex
   -> data/{diverse,baseline}/{model}/{grammar}.json
 
 scripts/metrics_eval.py

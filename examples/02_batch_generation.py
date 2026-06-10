@@ -17,7 +17,7 @@ Run:
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import baseline_regex, diverse_regex
+from diverse_guide import DiverseGuide, baseline_regex
 
 MODEL_PATH = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -41,7 +41,7 @@ def main():
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 
-    diverse_gen = diverse_regex(model, tokenizer, CSS_COLOR_REGEX)
+    diverse_gen = DiverseGuide(model, tokenizer, CSS_COLOR_REGEX)
     baseline_gen = baseline_regex(model, tokenizer, CSS_COLOR_REGEX)
 
     print("=== Diverse batch ===")

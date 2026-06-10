@@ -43,6 +43,11 @@ def test_temperature():
     assert path == Path("data/diverse/qwen2.5-0.5b-instruct-temperature_1.0")
 
 
+def test_ablation_component_for_diverse_runs():
+    path = get_data_dir_path(_args(ablation_component="reward"))
+    assert path == Path("data/diverse/qwen2.5-0.5b-instruct-no_reward")
+
+
 def test_all_sampling_params():
     path = get_data_dir_path(_args(top_k=50, top_p=0.95, temperature=0.8))
     assert path == Path(

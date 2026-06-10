@@ -58,6 +58,7 @@ Ruff linting, and PowerShell experiment-script checks.
 The root Python package exports the Rust-backed implementation from
 `src/diverse_guide/__init__.py`:
 
+- `DiverseGuide`
 - `diverse_regex`
 - `baseline_regex`
 - `StatefulSequenceGeneratorAdapter`
@@ -71,7 +72,7 @@ explain the change.
 
 ## Adding a New Grammar
 
-For ad hoc usage, users can pass any regex directly to `diverse_regex`.
+For ad hoc usage, users can pass any regex directly to `DiverseGuide`.
 
 For experiment-script support:
 
@@ -206,6 +207,8 @@ Before a release or OSP artifact snapshot:
 5. Validate `CITATION.cff` with `cffconvert --validate --infile CITATION.cff`.
 6. Confirm `REPRODUCIBILITY.md`, `docs/architecture.md`, and this file describe
    the current command surface.
-7. Confirm generated `data/`, `results/`, native build artifacts, virtual
+7. Create an immutable git tag for the artifact snapshot, such as `v0.2.0`, and
+   use that tag or a DOI-backed archive link in OSP metadata.
+8. Confirm generated `data/`, `results/`, native build artifacts, virtual
    environments, and caches are not part of the release unless intentionally
    archived as supplementary material.

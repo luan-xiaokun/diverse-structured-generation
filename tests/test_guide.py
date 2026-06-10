@@ -99,8 +99,8 @@ def test_reset_restores_initial_state_only(mock_tokenizer):
 # ---------------------------------------------------------------------------
 
 
-def _make_scores(vocab_size: int = 100) -> torch.FloatTensor:
-    return torch.zeros(1, vocab_size)
+def _make_scores(vocab_size: int = 100, batch_size: int = 1) -> torch.FloatTensor:
+    return torch.zeros(batch_size, vocab_size)
 
 
 def _make_input_ids(prompt_len: int = 5) -> torch.LongTensor:
@@ -184,6 +184,21 @@ def test_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
     assert not out[0, 99].isinf()  # EOS remains valid at terminal state
 
 
+def test_terminal_sentinel_keeps_only_eos(mock_tokenizer):
+    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
+    proc._seq_start_idx = 0
+    proc._guide_states_by_row = [-1]
+    proc._processed_lengths_by_row = [1]
+
+    input_ids = torch.tensor([[10, 77]], dtype=torch.long)
+    scores = torch.linspace(-1.0, 1.0, 100, dtype=torch.float).unsqueeze(0)
+
+    out = proc(input_ids, scores.clone())
+
+    assert not out[0, 99].isinf()
+    assert out[0, 10].item() == float("-inf")
+
+
 # ---------------------------------------------------------------------------
 # DiverseRegexLogitsProcessor — gamma=0 produces zero adjustment
 # ---------------------------------------------------------------------------
@@ -208,6 +223,90 @@ def test_baseline_regex_uses_mask_only_processor(mock_tokenizer):
     generator = gr.baseline_regex(object(), mock_tokenizer, r"a+")
 
     assert isinstance(generator.logits_processor, RegexMaskLogitsProcessor)
+
+
+# ---------------------------------------------------------------------------
+# RegexMaskLogitsProcessor — internal baseline behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_mask_only_reset_clears_guide_states(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    proc._guide_states_by_row = [42]
+    proc._processed_lengths_by_row = [3]
+    proc._seq_start_idx = 5
+
+    proc.reset()
+
+    assert proc._seq_start_idx is None
+    assert proc._guide_states_by_row is None
+    assert proc._processed_lengths_by_row is None
+
+
+def test_mask_only_disallows_non_regex_tokens(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    scores = _make_scores()
+
+    proc(_make_input_ids(), scores)
+
+    assert not scores[0, 10].isinf()
+    assert not scores[0, 20].isinf()
+    for tok in [0, 1, 9, 11, 19, 21, 98]:
+        assert scores[0, tok].item() == float("-inf")
+
+
+def test_mask_only_allows_eos_at_final_state(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    initial = proc.guide.initial_state
+    final_state = proc.dfa.get_next_token_state(initial, 10)
+    proc._seq_start_idx = 0
+    proc._guide_states_by_row = [final_state]
+    proc._processed_lengths_by_row = [1]
+    scores = _make_scores()
+
+    proc(torch.tensor([[10]], dtype=torch.long), scores)
+
+    assert not scores[0, 99].isinf()
+
+
+def test_mask_only_keeps_batch_rows_independent(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("ab", mock_tokenizer)
+    proc._seq_start_idx = 0
+    scores = _make_scores(batch_size=2)
+
+    proc(torch.tensor([[10], [20]], dtype=torch.long), scores)
+
+    assert not scores[0, 20].isinf()
+    assert scores[0, 10].item() == float("-inf")
+    assert scores[0, 99].item() == float("-inf")
+    assert not scores[1, 99].isinf()
+    assert scores[1, 10].item() == float("-inf")
+    assert scores[1, 20].item() == float("-inf")
+
+
+def test_mask_only_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    proc._seq_start_idx = 0
+    proc._guide_states_by_row = [-1]
+    proc._processed_lengths_by_row = [1]
+    scores = _make_scores()
+
+    out = proc(torch.tensor([[10, 77]], dtype=torch.long), scores)
+
+    assert not out[0, 99].isinf()
+    assert out[0, 10].item() == float("-inf")
+    assert out[0, 20].item() == float("-inf")
+
+
+def test_mask_only_does_not_update_diversity_counters(mock_tokenizer):
+    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    initial = proc.guide.initial_state
+    before = proc.dfa.compute_counts(initial)
+    proc._seq_start_idx = 0
+
+    proc(torch.tensor([[10]], dtype=torch.long), _make_scores())
+
+    assert proc.dfa.compute_counts(initial) == before
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +642,7 @@ def test_python_adapter_and_factory_coverage():
 
     d = gp.diverse_regex(model, tok, "[ab]")
     b = gp.baseline_regex(model, tok, "[ab]")
-    assert isinstance(d, gp.StatefulSequenceGeneratorAdapter)
+    assert isinstance(d, gp.DiverseGuide)
     assert b.logits_processor.gamma == 0.0
 
 
@@ -582,10 +681,17 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     adapter.update_generated_content("a")
     baseline = gr.baseline_regex(model, tok, "[ab]")
     assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
+    guide = gr.DiverseGuide(model, tok, "[ab]", gamma=0.5, beta=3.0)
+    assert isinstance(guide, gr.StatefulSequenceGeneratorAdapter)
+    assert isinstance(guide.logits_processor, gr.DiverseRegexLogitsProcessor)
+    assert guide.regex_str == "[ab]"
+    assert guide.gamma == 0.5
+    assert guide.beta == 3.0
 
     a1 = gr.diverse_regex(model, tok, "[ab]", ablation_component="reward")
     a2 = gr.diverse_regex(model, tok, "[ab]", ablation_component="penalty")
     a3 = gr.diverse_regex(model, tok, "[ab]", ablation_component="range_scaling")
+    assert isinstance(a1, gr.DiverseGuide)
     assert a1.logits_processor.no_reward
     assert a2.logits_processor.no_penalty
     assert a3.logits_processor.no_range_scaling

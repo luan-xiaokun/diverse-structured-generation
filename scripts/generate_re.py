@@ -8,12 +8,13 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import baseline_regex, diverse_regex
+from diverse_guide import DiverseGuide, baseline_regex
 from diverse_guide.evaluation.paths import get_data_dir_path
 
 GRAMMAR_REGEX = {
@@ -43,6 +44,10 @@ class GeneratedData:
     temperature: float | None
     seed: int | None
     samples: list[str]
+    elapsed_seconds: float | None = None
+    attempted_batches: int | None = None
+    accepted_samples: int | None = None
+    rejected_samples: int | None = None
 
     def to_dict(self):
         return {
@@ -56,6 +61,10 @@ class GeneratedData:
             "temperature": self.temperature,
             "seed": self.seed,
             "samples": self.samples,
+            "elapsed_seconds": self.elapsed_seconds,
+            "attempted_batches": self.attempted_batches,
+            "accepted_samples": self.accepted_samples,
+            "rejected_samples": self.rejected_samples,
         }
 
     @classmethod
@@ -71,6 +80,10 @@ class GeneratedData:
             temperature=data["temperature"],
             seed=data.get("seed"),
             samples=data["samples"],
+            elapsed_seconds=data.get("elapsed_seconds"),
+            attempted_batches=data.get("attempted_batches"),
+            accepted_samples=data.get("accepted_samples"),
+            rejected_samples=data.get("rejected_samples"),
         )
 
 
@@ -126,6 +139,11 @@ def parse_args():
         default=None,
         help="Seed Python, NumPy, and PyTorch before generation.",
     )
+    parser.add_argument(
+        "--local-files-only",
+        action="store_true",
+        help="Load model/tokenizer from the local Hugging Face cache only.",
+    )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
     parser.add_argument(
         "--output",
@@ -172,9 +190,16 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(args.model, dtype=dtype).to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        dtype=dtype,
+        local_files_only=args.local_files_only,
+    ).to(device)
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        local_files_only=args.local_files_only,
+    )
 
     generation_kwargs = {}
     if args.top_k is not None:
@@ -187,7 +212,7 @@ def main():
     if args.baseline:
         generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
-        generator = diverse_regex(
+        generator = DiverseGuide(
             model,
             tokenizer,
             regex,
@@ -206,6 +231,10 @@ def main():
         args.temperature,
         args.seed,
         [],
+        0.0,
+        0,
+        0,
+        0,
     )
     json_path: Path | None = None
     if not args.stdout_only:
@@ -226,28 +255,38 @@ def main():
     else:
         print("stdout-only mode: generated text will not be saved to disk.")
 
+    started = perf_counter()
     while len(gen_data.samples) < args.n:
         remaining = args.n - len(gen_data.samples)
         curr_batch_size = min(args.batch_size, remaining)
+        gen_data.attempted_batches = (gen_data.attempted_batches or 0) + 1
         batch_texts = generator.generate_batch(
             prompt, n=curr_batch_size, max_tokens=args.max_tokens
         )
 
         for text in batch_texts:
             if not re.match(pattern, text):
+                gen_data.rejected_samples = (gen_data.rejected_samples or 0) + 1
                 if args.stdout_only:
                     print(f"Failed: {text}")
                 continue
             gen_data.samples.append(text)
+            gen_data.accepted_samples = len(gen_data.samples)
             if args.stdout_only:
                 print(f"{len(gen_data.samples)}/{args.n}: {text}")
             if len(gen_data.samples) >= args.n:
                 break
 
+        gen_data.elapsed_seconds = perf_counter() - started
         if json_path is not None:
             with open(json_path, "w") as f:
                 json.dump(gen_data.to_dict(), f, indent=2)
 
+    gen_data.elapsed_seconds = perf_counter() - started
+    gen_data.accepted_samples = len(gen_data.samples)
+    if json_path is not None:
+        with open(json_path, "w") as f:
+            json.dump(gen_data.to_dict(), f, indent=2)
     print(f"Generated {len(gen_data.samples)} samples for grammar {grammar}.")
 
 

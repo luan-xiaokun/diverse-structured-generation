@@ -49,6 +49,10 @@ class DiverseGuideDFA:
         """Updates the path counter for the given string."""
         ...
 
+    def update_path_counter_for_token(self, state: int, token_id: int) -> None:
+        """Updates the path counter after consuming one token from state."""
+        ...
+
     def update_local_state_counter(self, state: int, token_id: int) -> None:
         """Updates the local state counter after generating a new token."""
         ...
@@ -63,6 +67,12 @@ class DiverseGuideDFA:
 
     def compute_counts(self, state: int) -> tuple[list[int], list[int], list[int]]:
         """Computes the counts for the given state."""
+        ...
+
+    def compute_adjustments(
+        self, state: int, beta: float, no_reward: bool, no_penalty: bool
+    ) -> tuple[list[int], list[float]]:
+        """Computes diversity adjustment values for the given state."""
         ...
 
     def __reduce__(self) -> tuple:

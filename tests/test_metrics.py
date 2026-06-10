@@ -38,6 +38,10 @@ def test_coverage_ratio_threshold():
     assert get_coverage_ratio(counts, threshold=2) == 0.5
 
 
+def test_coverage_ratio_empty_mapping():
+    assert get_coverage_ratio({}, threshold=1) == 0.0
+
+
 # ---------------------------------------------------------------------------
 # state_coverage
 # ---------------------------------------------------------------------------
@@ -68,6 +72,13 @@ def test_state_coverage_step_size_monotone(dfa_single):
     assert result[0] <= result[1]
 
 
+def test_state_coverage_step_size_appends_remainder(dfa_single):
+    result = state_coverage(dfa_single, ["a", "b", "a"], step_size=2)
+
+    assert len(result) == 2
+    assert all(0.0 <= v <= 1.0 for v in result)
+
+
 # ---------------------------------------------------------------------------
 # transition_coverage
 # ---------------------------------------------------------------------------
@@ -91,6 +102,13 @@ def test_transition_coverage_step_size(dfa_single):
     assert len(result) == 2
 
 
+def test_transition_coverage_step_size_appends_remainder(dfa_single):
+    result = transition_coverage(dfa_single, ["a", "b", "a"], step_size=2)
+
+    assert len(result) == 2
+    assert all(0.0 <= v <= 1.0 for v in result)
+
+
 # ---------------------------------------------------------------------------
 # path_coverage
 # ---------------------------------------------------------------------------
@@ -106,6 +124,13 @@ def test_path_coverage_full_with_one_input(dfa_single):
 def test_path_coverage_step_size(dfa_single):
     result = path_coverage(dfa_single, ["a", "b"], step_size=1)
     assert isinstance(result, list)
+
+
+def test_path_coverage_step_size_appends_remainder(dfa_single):
+    result = path_coverage(dfa_single, ["a", "b", "a"], step_size=2)
+
+    assert len(result) == 2
+    assert all(0.0 <= v <= 1.0 for v in result)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +172,14 @@ def test_vendi_score_step_size_returns_list():
     assert isinstance(result, list)
     # step_size=2, len=4: indices 2, 4 (but 4==len, handled by remainder check)
     assert len(result) >= 1
+
+
+def test_vendi_score_step_size_appends_remainder():
+    inputs = ["a", "b", "c"]
+    result = vendi_score(inputs, _identity_kernel, step_size=2)
+
+    assert len(result) == 2
+    assert result[-1] == pytest.approx(3.0, rel=1e-3)
 
 
 # ---------------------------------------------------------------------------

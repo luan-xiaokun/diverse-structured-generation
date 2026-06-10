@@ -47,7 +47,7 @@ def _metrics_result(experiment, setting, grammar):
 
 def _runtime_result(setting, grammar, baseline_backend=None):
     if baseline_backend is None:
-        baseline_backend = "outlines" if setting == "baseline" else "internal"
+        baseline_backend = "internal"
     return {
         "schema_version": 1,
         "experiment": "runtime",
@@ -105,7 +105,7 @@ def test_collect_all_writes_csv_tables(tmp_path):
     with runtime_csv.open(encoding="utf-8") as f:
         runtime_rows = list(csv.DictReader(f))
     assert runtime_rows[0]["tokens_per_second"] == "20.0"
-    assert runtime_rows[0]["baseline_backend"] == "outlines"
+    assert runtime_rows[0]["baseline_backend"] == "internal"
     assert runtime_rows[0]["seed"] == "42"
 
 

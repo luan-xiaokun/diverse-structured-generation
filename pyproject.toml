@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "diverse-guide"
 version = "0.2.0"
-description = "Diversity-enhancing method for LLM structured generation with regex constraints"
+description = "DiverseGuide: automata-based steering for diverse regex-constrained LLM structured generation"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
   { name = "Xiaokun Luan" },
-  { name = "Zemin Wei" },
+  { name = "Zeming Wei" },
   { name = "Yihao Zhang" },
   { name = "Meng Sun" },
 ]

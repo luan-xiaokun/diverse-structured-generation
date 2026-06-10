@@ -153,8 +153,8 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                                     {1 + c^{\\text{path}}_i}
                        \\cdot \\frac{1}{\\beta \\cdot (c^{\\text{local}}_i)^2}
 
-    The path counter (global, cross-sequence) is updated externally via
-    :meth:`StatefulSequenceGeneratorAdapter.update_generated_content`.
+    The path counter (global, cross-sequence) is updated incrementally as newly
+    generated token ids are consumed.
     The local counter (per ``model.generate`` call) is reset by :meth:`reset`.
     """
 
@@ -177,7 +177,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             HuggingFace tokenizer whose vocabulary is compiled into the DFA.
         gamma:
             Reward scale factor.  Higher values more aggressively boost tokens
-            on under-explored paths.  Set to ``0`` for baseline (no diversity).
+            on under-explored paths. Set to ``0`` to disable the reward
+            adjustment for this processor. The public internal baseline uses
+            :class:`RegexMaskLogitsProcessor`.
         beta:
             Penalty scale factor.  Higher values more strongly suppress tokens
             already used heavily within the current batch step.
@@ -234,12 +236,49 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                 except ValueError:
                     state = -1
                 if state != -1:
+                    self.dfa.update_path_counter_for_token(prev_state, token_id)
                     self.dfa.update_local_state_counter(prev_state, token_id)
             processed += 1
 
         self._guide_states_by_row[row] = state
         self._processed_lengths_by_row[row] = processed
         return state
+
+    def _compute_adjustments_from_counts(
+        self,
+        reward_counts: list[int],
+        penalty_counts: list[int],
+    ) -> torch.FloatTensor:
+        reward_counts_tensor = torch.tensor(reward_counts, dtype=torch.float)
+        penalty_counts_tensor = torch.tensor(penalty_counts, dtype=torch.float)
+        reward = torch.log(1 + reward_counts_tensor.sum()) / (1 + reward_counts_tensor)
+        penalty = self.beta * penalty_counts_tensor**2
+
+        if self.no_reward:
+            reward = torch.ones_like(reward_counts_tensor)
+        if self.no_penalty:
+            penalty = torch.ones_like(penalty_counts_tensor)
+
+        return reward / penalty
+
+    def _compute_row_allowed_tokens_and_adjustments(
+        self, guide_state: int
+    ) -> tuple[torch.LongTensor, torch.FloatTensor]:
+        if guide_state == -1:
+            allowed_tokens = [self.guide.eos_token_id]
+            adjustments = self._compute_adjustments_from_counts([0], [1])
+            return torch.tensor(allowed_tokens, dtype=torch.long), adjustments
+
+        allowed_tokens, adjustments = self.dfa.compute_adjustments(
+            guide_state,
+            self.beta,
+            self.no_reward,
+            self.no_penalty,
+        )
+        return (
+            torch.tensor(allowed_tokens, dtype=torch.long),
+            torch.tensor(adjustments, dtype=torch.float),
+        )
 
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
@@ -260,28 +299,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         batch_indices = []
         adjusts = []
         for i, guide_state in enumerate(sequence_states):
-            if guide_state == -1:
-                allowed_tokens = [self.guide.eos_token_id]
-                reward_counts = [0]
-                penalty_counts = [1]
-            else:
-                allowed_tokens, reward_counts, penalty_counts = self.dfa.compute_counts(
-                    guide_state
-                )
-            allowed_tokens = torch.tensor(allowed_tokens, dtype=torch.long)
+            allowed_tokens, adjustments = (
+                self._compute_row_allowed_tokens_and_adjustments(guide_state)
+            )
             allowed_tokens_batch.append(allowed_tokens)
             batch_indices.append(torch.full_like(allowed_tokens, i))
-            reward_counts = torch.tensor(reward_counts, dtype=torch.float)
-            penalty_counts = torch.tensor(penalty_counts, dtype=torch.float)
-            reward = torch.log(1 + reward_counts.sum()) / (1 + reward_counts)
-            penalty = self.beta * penalty_counts**2
-
-            if self.no_reward:
-                reward = torch.ones_like(reward_counts)
-            if self.no_penalty:
-                penalty = torch.ones_like(penalty_counts)
-
-            adjusts.append(reward / penalty)
+            adjusts.append(adjustments)
 
         allowed_tokens_concat = torch.cat(allowed_tokens_batch).to(device)
         batch_indices_concat = torch.cat(batch_indices).to(device)
@@ -310,17 +333,16 @@ class StatefulSequenceGeneratorAdapter:
     stateful generation.
 
     Maintains a cross-call path counter so that successive calls (or batches)
-    are diversified relative to all previously generated sequences.
+    are diversified relative to token paths generated so far.
 
     Typical usage::
 
-        generator = diverse_regex(model, tokenizer, regex_str)
+        generator = DiverseGuide(model, tokenizer, regex_str)
         for _ in range(100):
             text = generator(prompt, max_tokens=40)
-            generator.update_generated_content(text)  # update global path counter
 
-    Or more conveniently via :meth:`generate_batch`, which updates counters
-    automatically.
+    The logits processor updates counters automatically from newly generated
+    token ids during generation.
     """
 
     def __init__(
@@ -416,19 +438,55 @@ class StatefulSequenceGeneratorAdapter:
             new_ids = output_ids[i, prompt_len:]
             text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
             results.append(text)
-            self.logits_processor.dfa.update_path_counter(text)
 
         return results
 
     def update_generated_content(self, generated_content: str) -> None:
         """Update the global path counter with a previously generated string.
 
-        Must be called after each successful generation when using
-        :meth:`__call__` directly, so that subsequent calls are diversified
-        relative to *generated_content*.  Not needed when using
-        :meth:`generate_batch`, which updates counters automatically.
+        Deprecated. Runtime path counters are updated incrementally from newly
+        generated token ids inside the logits processor, avoiding full-text
+        replay and tokenizer re-decoding ambiguity.
         """
-        self.logits_processor.dfa.update_path_counter(generated_content)
+        _ = generated_content
+
+
+class DiverseGuide(StatefulSequenceGeneratorAdapter):
+    """User-facing generator for diverse regex-constrained generation.
+
+    ``DiverseGuide`` is the canonical public API for the DiverseGuide software.
+    It compiles the regex constraint into a DFA-backed logits processor and
+    exposes the same single-sequence and batch generation methods as
+    :class:`StatefulSequenceGeneratorAdapter`.
+    """
+
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        regex_str: str,
+        gamma: float = 0.5,
+        beta: float = 3.0,
+        ablation_component: str | None = None,
+        **generation_kwargs,
+    ):
+        no_reward = ablation_component == "reward"
+        no_penalty = ablation_component == "penalty"
+        no_range_scaling = ablation_component == "range_scaling"
+        logits_processor = DiverseRegexLogitsProcessor(
+            regex_str,
+            tokenizer,
+            gamma=gamma,
+            beta=beta,
+            no_reward=no_reward,
+            no_penalty=no_penalty,
+            no_range_scaling=no_range_scaling,
+        )
+        super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
+        self.regex_str = regex_str
+        self.gamma = gamma
+        self.beta = beta
+        self.ablation_component = ablation_component
 
 
 def diverse_regex(
@@ -441,6 +499,9 @@ def diverse_regex(
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator.
+
+    This compatibility helper returns :class:`DiverseGuide`. New code should
+    instantiate ``DiverseGuide`` directly.
 
     Parameters
     ----------
@@ -461,21 +522,14 @@ def diverse_regex(
     **generation_kwargs
         Additional kwargs forwarded to model.generate().
     """
-    no_reward = ablation_component == "reward"
-    no_penalty = ablation_component == "penalty"
-    no_range_scaling = ablation_component == "range_scaling"
-
-    logits_processor = DiverseRegexLogitsProcessor(
-        regex_str,
+    return DiverseGuide(
+        model,
         tokenizer,
+        regex_str,
         gamma=gamma,
         beta=beta,
-        no_reward=no_reward,
-        no_penalty=no_penalty,
-        no_range_scaling=no_range_scaling,
-    )
-    return StatefulSequenceGeneratorAdapter(
-        model, tokenizer, logits_processor, **generation_kwargs
+        ablation_component=ablation_component,
+        **generation_kwargs,
     )
 
 

@@ -1,0 +1,5 @@
+experiment,setting,grammar,model,sample_count,average_length,state_count,transition_count,state_coverage,transition_coverage,path_coverage,distinct_2gram_count,distinct_2gram_samples,distinct_3gram_count,distinct_3gram_samples,vendi_score,average_perplexity,perplexity_count,perplexity_error_count,temperature,ablation_component
+component_ablation,diverse,css-color,Qwen/Qwen2.5-1.5B-Instruct,1000,11.714,1309,7495,0.49732620320855614,0.1798532354903269,0.3278784336645237,554,1000,1594,1000,135.98970922774433,,0,0,,
+component_ablation,diverse,css-color,Qwen/Qwen2.5-1.5B-Instruct,1000,8.117,1309,7495,0.5294117647058824,0.14102735156771182,0.2910578609000584,466,1000,915,1000,113.58315056042345,,0,0,,penalty
+component_ablation,diverse,css-color,Qwen/Qwen2.5-1.5B-Instruct,1000,15.713,1309,7495,0.05042016806722689,0.026817878585723817,0.028930450029222676,196,1000,399,1000,17.697500928417718,,0,0,,range_scaling
+component_ablation,diverse,css-color,Qwen/Qwen2.5-1.5B-Instruct,1000,16.516,1309,7495,0.026737967914438502,0.017078052034689793,0.018118059614260665,134,1000,303,1000,11.049959473397813,,0,0,,reward

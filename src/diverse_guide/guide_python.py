@@ -279,6 +279,27 @@ class StatefulSequenceGeneratorAdapter:
             self.logits_processor.transition_counter[transition] += 1
 
 
+class DiverseGuide(StatefulSequenceGeneratorAdapter):
+    """Pure-Python reference implementation of the ``DiverseGuide`` API."""
+
+    def __init__(
+        self,
+        model: PreTrainedModel,
+        tokenizer: PreTrainedTokenizerBase,
+        regex_str: str,
+        gamma: float = 0.5,
+        beta: float = 3.0,
+        **generation_kwargs,
+    ):
+        logits_processor = DiverseRegexLogitsProcessor(
+            regex_str, tokenizer, gamma=gamma, beta=beta
+        )
+        super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
+        self.regex_str = regex_str
+        self.gamma = gamma
+        self.beta = beta
+
+
 def diverse_regex(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
@@ -289,13 +310,10 @@ def diverse_regex(
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator (pure Python reference).
 
-    Equivalent to :func:`guide_rust.diverse_regex` but with Python counter tracking.
+    Compatibility helper for :class:`DiverseGuide` with Python counter tracking.
     """
-    logits_processor = DiverseRegexLogitsProcessor(
-        regex_str, tokenizer, gamma=gamma, beta=beta
-    )
-    return StatefulSequenceGeneratorAdapter(
-        model, tokenizer, logits_processor, **generation_kwargs
+    return DiverseGuide(
+        model, tokenizer, regex_str, gamma=gamma, beta=beta, **generation_kwargs
     )
 
 

@@ -1,21 +1,28 @@
-# Diverse Structured Generation
+# DiverseGuide
 
-![Python coverage](https://img.shields.io/badge/python%20coverage-89%25-yellowgreen)
-![Rust coverage](https://img.shields.io/badge/rust%20coverage-97.22%25-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.2.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-This repository is the artifact for the paper:
+**OSP title:** DiverseGuide: Automata-Based Steering for Diverse Structured Generation
+
+This repository is the DiverseGuide software artifact for the paper:
 
 > **Automata-Based Steering of Large Language Models for Diverse Structured Generation**
-> Xiaokun Luan, Zemin Wei, Yihao Zhang, Meng Sun
+> Xiaokun Luan, Zeming Wei, Yihao Zhang, Meng Sun
 > 26th International Conference on Formal Engineering Methods (ICFEM 2025)
 
 It implements a diversity-enhancing method for LLM structured generation constrained by regular expressions.
+
+The canonical software name and Python distribution name are `DiverseGuide` and
+`diverse-guide`. The repository remains
+`luan-xiaokun/diverse-structured-generation` for continuity with the ICFEM 2025
+paper link.
 
 ---
 
 ## Table of Contents
 
-- [Diverse Structured Generation](#diverse-structured-generation)
+- [DiverseGuide](#diverseguide)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [Installation](#installation)
@@ -29,12 +36,12 @@ It implements a diversity-enhancing method for LLM structured generation constra
   - [Minimal Smoke Test](#minimal-smoke-test)
   - [Quick Start](#quick-start)
   - [API Reference](#api-reference)
-    - [`diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`](#diverse_regexmodel-tokenizer-regex_str-gamma05-beta30-generation_kwargs)
+    - [`DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`](#diverseguidemodel-tokenizer-regex_str-gamma05-beta30-generation_kwargs)
     - [`baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`](#baseline_regexmodel-tokenizer-regex_str-generation_kwargs)
     - [`StatefulSequenceGeneratorAdapter`](#statefulsequencegeneratoradapter)
     - [Parameters](#parameters)
   - [Running Experiments](#running-experiments)
-    - [Reproducing paper results](#reproducing-paper-results)
+    - [Reproducing OSP artifact results](#reproducing-osp-artifact-results)
   - [Evaluation Backend](#evaluation-backend)
   - [Tests](#tests)
   - [Project Structure](#project-structure)
@@ -45,10 +52,10 @@ It implements a diversity-enhancing method for LLM structured generation constra
 
 ## Overview
 
-This project adds regex-constrained diverse generation on top of standard Hugging Face Transformers workflows.
+`DiverseGuide` adds regex-constrained diverse generation on top of standard Hugging Face Transformers workflows.
 You keep using `AutoModelForCausalLM` and `AutoTokenizer`, then create a guided generator via:
 
-- `diverse_regex(model, tokenizer, regex_str, ...)` for diversity-enhanced constrained generation
+- `DiverseGuide(model, tokenizer, regex_str, ...)` for diversity-enhanced constrained generation
 - `baseline_regex(model, tokenizer, regex_str, ...)` for constrained generation without diversity adjustment
 
 Typical usage flow:
@@ -242,7 +249,7 @@ cl.exe /O2 /openmp /LD native\wd_kernel\wd_kernel.c /Febuild\native\wd_kernel\wd
 Models are loaded via `transformers.from_pretrained`, so you can use any compatible model.
 The default model used in experiments is `Qwen/Qwen2.5-1.5B-Instruct`.
 
-If you want to reproduce the paper's **temperature-ablation experiment results (Table 5, Table 6, Table 7)**,
+If you want to run the optional extended ICFEM temperature-ablation analysis,
 you should also prepare `microsoft/Phi-4-mini-instruct` for perplexity evaluation.
 
 ```bash
@@ -254,7 +261,7 @@ AutoModelForCausalLM.from_pretrained(model)
 "
 ```
 
-Optional additional download for the paper's temperature-ablation experiment results (Table 5, Table 6, Table 7):
+Optional additional download for the optional extended ICFEM temperature-ablation analysis:
 
 ```bash
 python -c "
@@ -296,10 +303,10 @@ it only verifies that the Python package and Rust extension are installed and wo
 ```bash
 python - <<'PY'
 from regex_dfa_guide import DiverseGuideDFA
-from diverse_guide import diverse_regex, baseline_regex
+from diverse_guide import DiverseGuide, baseline_regex
 
 # Import check for public API
-assert callable(diverse_regex)
+assert callable(DiverseGuide)
 assert callable(baseline_regex)
 
 # Rust extension check
@@ -322,7 +329,7 @@ If this script prints `Smoke test passed`, your environment setup is correct.
 ```python
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from diverse_guide import diverse_regex, baseline_regex
+from diverse_guide import DiverseGuide
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float16 if device == "cuda" else torch.float32
@@ -334,7 +341,7 @@ tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-1.5B-Instruct")
 # regex for six-digit hex CSS colors
 css_color_regex = r"#[0-9a-fA-F]{6}"
 
-generator = diverse_regex(model, tokenizer, css_color_regex)
+generator = DiverseGuide(model, tokenizer, css_color_regex)
 
 # generate a single sample
 sample = generator("Give me a CSS color code.", max_tokens=20)
@@ -349,9 +356,14 @@ See [examples/](examples/) for more complete usage patterns.
 
 ## API Reference
 
-### `diverse_regex(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`
+### `DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`
 
-Returns a `StatefulSequenceGeneratorAdapter` configured for diverse generation.
+Creates a stateful generator configured for diverse regex-constrained generation.
+The returned object is callable for one sample and also exposes
+`generate_batch(prompt, n, max_tokens)`.
+
+`diverse_regex(...)` remains available as a compatibility helper that returns
+`DiverseGuide(...)`.
 
 ### `baseline_regex(model, tokenizer, regex_str, **generation_kwargs)`
 
@@ -407,24 +419,39 @@ By default, generated samples are saved to `data/diverse/{model}/` (diverse)
 or `data/baseline/{model}/` (baseline).
 Use `--output` to override the output path, or `--stdout-only` to skip writing JSON files.
 
-### Reproducing paper results
+### Reproducing OSP artifact results
 
 For the reviewer-facing reproducibility protocol, start with
 [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
-Reproduction scripts live in [experiments/README.md](experiments/README.md).
-The document maps scripts to paper tables and provides Linux / macOS and Windows entrypoints.
+Reference CSV summaries for the v0.2.0 artifact snapshot are tracked under
+[artifact-results/v0.2.0/](artifact-results/v0.2.0/). Regenerated local outputs
+are written under ignored `results/`; primary results can be summarized with
+`uv run python scripts/collect_results.py --experiment diversity` and
+`uv run python scripts/collect_results.py --experiment runtime`.
 
-Table mapping summary:
+The OSP primary reproduction path is:
 
-- paper's diversity-evaluation experiment results (Table 1, Table 2, Table 3): `2_diversity_evaluation.*`
-- paper's efficiency-evaluation experiment results (Table 4): `3_efficiency_evaluation.*`
-- paper's temperature-ablation experiment results (Table 5, Table 6, Table 7): `4_temperature_ablation.*`
-- paper's component-ablation experiment results (Table 8): `5_component_ablation.*`
-- paper's case-study experiment results (Table 9): `experiments/case_study/`
+1. Generate baseline and DiverseGuide samples with `experiments/1_generation.*`.
+2. Evaluate diversity and DFA coverage with `experiments/2_diversity_evaluation.*`.
+3. Measure runtime with `experiments/3_efficiency_evaluation.*`.
+4. Run `uv run python scripts/collect_results.py --experiment diversity` and
+   `uv run python scripts/collect_results.py --experiment runtime`.
+5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
+   with `artifact-results/v0.2.0/primary/`.
 
-If you want a lightweight artifact check instead of full reproduction,
-start with `Minimal Sanity Check` in [experiments/README.md](experiments/README.md).
+Optional reproduction material remains available:
+
+| Role | Entry point | Reference summary |
+| --- | --- | --- |
+| optional automated impact check | `experiments/case_study/` | Generated locally as `experiments/case_study/case_study_summary.json` |
+| optional extended ICFEM temperature analysis | `experiments/4_temperature_ablation.*` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
+| optional extended ICFEM component analysis | `experiments/5_component_ablation.*` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
+
+The diversity results should be interpreted through automata-oriented coverage
+metrics first: DFA state coverage, transition coverage, and path coverage.
+String-diversity metrics such as Vendi score are task-sensitive and are not
+expected to improve for every grammar.
 
 ---
 
@@ -465,12 +492,16 @@ pytest --cov=diverse_guide --cov-report=term-missing --cov-branch
 Coverage is reported for the `diverse_guide` package (the core deliverable).
 The Rust extension (`DiverseGuideDFA`) is tested via its Python bindings in [tests/test_dfa.py](tests/test_dfa.py).
 
-Current test and coverage status (latest local run):
+Verification status for the `v0.2.0` artifact snapshot:
 
-- Python test suite: `166 passed`
-- Python package coverage (`diverse_guide`): `89%`
-- Rust unit tests (`regex_dfa_guide`): `11 passed`
-- Rust coverage: `Regions 96.37%`, `Lines 97.22%`, `Functions Executed 90.28%`
+- Python test suite: `200 passed`
+- Rust unit tests (`regex_dfa_guide`): `12 passed`
+- Python linting with Ruff: passed
+- `CITATION.cff` validation with `cffconvert`: passed
+
+Coverage summaries are generated by the commands above and may change as the
+test suite evolves; the release checklist in [docs/developing.md](docs/developing.md)
+lists the checks to run before an artifact snapshot.
 
 Rust native tests:
 
@@ -529,7 +560,7 @@ scripts/
 
 examples/                 # Standalone usage examples
 tests/                    # Pytest suite
-experiments/              # Paper reproduction scripts and case study
+experiments/              # OSP reproduction scripts and optional material
 
 Dockerfile                # Main container build
 .dockerignore             # Docker build-context exclusions
