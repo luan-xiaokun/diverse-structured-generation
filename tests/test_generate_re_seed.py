@@ -169,6 +169,18 @@ def test_parse_args_accepts_path_frequency_estimator(monkeypatch):
     assert args.path_frequency_estimator == "min"
 
 
+def test_parse_args_accepts_no_progress(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--no-progress"],
+    )
+
+    args = generate_re.parse_args()
+
+    assert args.no_progress is True
+
+
 def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
     monkeypatch.setattr(
         sys,

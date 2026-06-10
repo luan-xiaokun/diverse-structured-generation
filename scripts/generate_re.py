@@ -14,6 +14,7 @@ from time import perf_counter
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from diverse_guide import DiverseGuide, baseline_regex
@@ -273,6 +274,11 @@ def parse_args():
         help="Print generated samples to stdout only (do not save JSON).",
     )
     parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the accepted-sample progress bar.",
+    )
+    parser.add_argument(
         "--ablation-component",
         type=str,
         choices=["reward", "penalty", "range_scaling"],
@@ -397,32 +403,60 @@ def main():
     else:
         print("stdout-only mode: generated text will not be saved to disk.")
 
-    started = perf_counter()
-    while len(gen_data.samples) < args.n:
-        remaining = args.n - len(gen_data.samples)
-        curr_batch_size = min(args.batch_size, remaining)
-        gen_data.attempted_batches = (gen_data.attempted_batches or 0) + 1
-        batch_texts = generator.generate_batch(
-            prompt, n=curr_batch_size, max_tokens=args.max_tokens
+    progress_bar = None
+    if not args.no_progress and not args.stdout_only:
+        progress_bar = tqdm(
+            total=args.n,
+            initial=len(gen_data.samples),
+            desc=f"{grammar}:{'baseline' if args.baseline else 'diverse'}",
+            unit="sample",
+            dynamic_ncols=True,
         )
 
-        for text in batch_texts:
-            if not re.match(pattern, text):
-                gen_data.rejected_samples = (gen_data.rejected_samples or 0) + 1
-                if args.stdout_only:
-                    print(f"Failed: {text}")
-                continue
-            gen_data.samples.append(text)
-            gen_data.accepted_samples = len(gen_data.samples)
-            if args.stdout_only:
-                print(f"{len(gen_data.samples)}/{args.n}: {text}")
-            if len(gen_data.samples) >= args.n:
-                break
+    started = perf_counter()
+    try:
+        while len(gen_data.samples) < args.n:
+            remaining = args.n - len(gen_data.samples)
+            curr_batch_size = min(args.batch_size, remaining)
+            gen_data.attempted_batches = (gen_data.attempted_batches or 0) + 1
+            batch_texts = generator.generate_batch(
+                prompt, n=curr_batch_size, max_tokens=args.max_tokens
+            )
 
-        gen_data.elapsed_seconds = perf_counter() - started
-        if json_path is not None:
-            with open(json_path, "w") as f:
-                json.dump(gen_data.to_dict(), f, indent=2)
+            for text in batch_texts:
+                if not re.match(pattern, text):
+                    gen_data.rejected_samples = (gen_data.rejected_samples or 0) + 1
+                    if args.stdout_only:
+                        print(f"Failed: {text}")
+                    continue
+                gen_data.samples.append(text)
+                gen_data.accepted_samples = len(gen_data.samples)
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                if args.stdout_only:
+                    print(f"{len(gen_data.samples)}/{args.n}: {text}")
+                if len(gen_data.samples) >= args.n:
+                    break
+
+            gen_data.elapsed_seconds = perf_counter() - started
+            if progress_bar is not None:
+                accepted = len(gen_data.samples)
+                rejected = gen_data.rejected_samples or 0
+                attempts = accepted + rejected
+                progress_bar.set_postfix(
+                    {
+                        "accepted": accepted,
+                        "rejected": rejected,
+                        "attempts": attempts,
+                        "elapsed_s": f"{gen_data.elapsed_seconds:.1f}",
+                    }
+                )
+            if json_path is not None:
+                with open(json_path, "w") as f:
+                    json.dump(gen_data.to_dict(), f, indent=2)
+    finally:
+        if progress_bar is not None:
+            progress_bar.close()
 
     gen_data.elapsed_seconds = perf_counter() - started
     gen_data.accepted_samples = len(gen_data.samples)
