@@ -114,6 +114,26 @@ def test_zero_counter_adjustment_zero(mock_tokenizer):
     )
 
 
+def test_completion_bias_adjustment_matches_between_python_and_rust(mock_tokenizer):
+    py_proc = PyProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, beta=3.0, completion_bias_eta=0.2
+    )
+    rs_proc = RustProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, beta=3.0, completion_bias_eta=0.2
+    )
+
+    input_ids = torch.zeros(1, 0, dtype=torch.long)
+    scores_base = _make_scores()
+
+    scores_py = py_proc(input_ids, scores_base.clone())
+    scores_rs = rs_proc(input_ids, scores_base.clone())
+
+    allowed = scores_py != float("-inf")
+    assert torch.allclose(scores_py[allowed], scores_rs[allowed], atol=1e-5), (
+        "Completion-bias scores differ between Python and Rust processors"
+    )
+
+
 def test_counter_populated_compute_counts_equivalent(mock_tokenizer):
     """Rust compute_counts should match the Python counter semantics by token id."""
     py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)

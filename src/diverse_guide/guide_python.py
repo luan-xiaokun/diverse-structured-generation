@@ -77,6 +77,12 @@ class DiverseRegexGuide:
         """Advance the DFA by one token and return the resulting state id."""
         return self.dfa.get_next_token_state(state, token_id)
 
+    def get_distance_to_accepting(self, state: int) -> int:
+        """Return the shortest token-level distance to an accepting state."""
+        if state == -1:
+            return 0
+        return self.dfa.get_distance_to_accepting(state)
+
     def is_final_state(self, state: int) -> bool:
         """Return ``True`` if *state* is an accepting (final) state."""
         return state == -1 or self.dfa.is_final_state(state)
@@ -111,14 +117,18 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         tokenizer: PreTrainedTokenizerBase,
         gamma: float = 0.5,
         beta: float = 3.0,
+        completion_bias_eta: float = 0.0,
     ):
         self.guide = DiverseRegexGuide(regex_string, tokenizer)
         self.state_counter: Counter = Counter()
         self.transition_counter: Counter = Counter()
         self.local_state_counter: Counter = Counter()
         self.local_transition_counter: Counter = Counter()
+        if completion_bias_eta < 0.0:
+            raise ValueError("completion_bias_eta must be non-negative")
         self.gamma = gamma
         self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
         self._guide_states: dict[tuple[int, ...], int] = {(): self.guide.initial_state}
         self._seq_start_idx: int | None = None
 
@@ -179,10 +189,13 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
 
             counts = []
             local_counts = []
+            current_distance = self.guide.get_distance_to_accepting(guide_state)
+            completion_bonuses = []
             for token_id in allowed_tokens.tolist():
                 state_seq = self.guide.get_state_sequence_from_token_id(
                     guide_state, token_id
                 )
+                next_state = state_seq[-1] if state_seq else guide_state
                 transitions = list(zip(state_seq, state_seq[1:]))
                 if transitions:
                     counts.append(min(self.transition_counter[t] for t in transitions))
@@ -192,12 +205,23 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                     (self.local_state_counter[s] for s in state_seq[1:]), default=0
                 )
                 local_counts.append(max(1, local_count))
+                if self.completion_bias_eta > 0.0:
+                    next_distance = self.guide.get_distance_to_accepting(next_state)
+                    progress = max(0, current_distance - next_distance)
+                    completion_bonuses.append(
+                        self.completion_bias_eta * progress / (1 + current_distance)
+                    )
+                else:
+                    completion_bonuses.append(0.0)
 
             counts_t = torch.tensor(counts, dtype=torch.float)
             reward = torch.log(1 + counts_t.sum()) / (1 + counts_t)
             local_counts_t = torch.tensor(local_counts, dtype=torch.float)
             penalty = self.beta * local_counts_t**2
-            adjusts.append(reward / penalty)
+            adjusts.append(
+                (reward / penalty)
+                + torch.tensor(completion_bonuses, dtype=torch.float)
+            )
 
         allowed_tokens_concat = torch.cat(allowed_tokens_batch).to(device)
         batch_indices_concat = torch.cat(batch_indices).to(device)
@@ -289,15 +313,21 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         regex_str: str,
         gamma: float = 0.5,
         beta: float = 3.0,
+        completion_bias_eta: float = 0.0,
         **generation_kwargs,
     ):
         logits_processor = DiverseRegexLogitsProcessor(
-            regex_str, tokenizer, gamma=gamma, beta=beta
+            regex_str,
+            tokenizer,
+            gamma=gamma,
+            beta=beta,
+            completion_bias_eta=completion_bias_eta,
         )
         super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
         self.regex_str = regex_str
         self.gamma = gamma
         self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
 
 
 def diverse_regex(
@@ -306,6 +336,7 @@ def diverse_regex(
     regex_str: str,
     gamma: float = 0.5,
     beta: float = 3.0,
+    completion_bias_eta: float = 0.0,
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator (pure Python reference).
@@ -313,7 +344,13 @@ def diverse_regex(
     Compatibility helper for :class:`DiverseGuide` with Python counter tracking.
     """
     return DiverseGuide(
-        model, tokenizer, regex_str, gamma=gamma, beta=beta, **generation_kwargs
+        model,
+        tokenizer,
+        regex_str,
+        gamma=gamma,
+        beta=beta,
+        completion_bias_eta=completion_bias_eta,
+        **generation_kwargs,
     )
 
 

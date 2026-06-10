@@ -60,6 +60,12 @@ class DiverseRegexGuide:
         """Advance the DFA by one token and return the resulting state id."""
         return self.dfa.get_next_token_state(state, token_id)
 
+    def get_distance_to_accepting(self, state: int) -> int:
+        """Return the shortest token-level distance to an accepting state."""
+        if state == -1:
+            return 0
+        return self.dfa.get_distance_to_accepting(state)
+
     def is_final_state(self, state: int) -> bool:
         """Return ``True`` if *state* is an accepting (final) state."""
         return state == -1 or self.dfa.is_final_state(state)
@@ -164,6 +170,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         tokenizer: PreTrainedTokenizerBase,
         gamma: float = 0.5,
         beta: float = 3.0,
+        completion_bias_eta: float = 0.0,
         no_reward: bool = False,
         no_penalty: bool = False,
         no_range_scaling: bool = False,
@@ -183,6 +190,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         beta:
             Penalty scale factor.  Higher values more strongly suppress tokens
             already used heavily within the current batch step.
+        completion_bias_eta:
+            Small bonus weight for tokens that move the DFA closer to an
+            accepting state. Set to ``0.0`` to disable the completion bias.
         no_reward:
             If ``True``, do not apply reward adjustments. For ablation purposes.
         no_penalty:
@@ -194,8 +204,11 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         guide = DiverseRegexGuide(regex_string, tokenizer)
         self.guide = guide
         self.dfa = guide.dfa
+        if completion_bias_eta < 0.0:
+            raise ValueError("completion_bias_eta must be non-negative")
         self.gamma = gamma
         self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
         self.no_reward = no_reward
         self.no_penalty = no_penalty
         self.no_range_scaling = no_range_scaling
@@ -273,6 +286,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             self.beta,
             self.no_reward,
             self.no_penalty,
+            self.completion_bias_eta,
         )
         return (
             torch.tensor(allowed_tokens, dtype=torch.long),
@@ -469,6 +483,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         regex_str: str,
         gamma: float = 0.5,
         beta: float = 3.0,
+        completion_bias_eta: float = 0.0,
         ablation_component: str | None = None,
         **generation_kwargs,
     ):
@@ -480,6 +495,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
             tokenizer,
             gamma=gamma,
             beta=beta,
+            completion_bias_eta=completion_bias_eta,
             no_reward=no_reward,
             no_penalty=no_penalty,
             no_range_scaling=no_range_scaling,
@@ -488,6 +504,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         self.regex_str = regex_str
         self.gamma = gamma
         self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
         self.ablation_component = ablation_component
 
 
@@ -497,6 +514,7 @@ def diverse_regex(
     regex_str: str,
     gamma: float = 0.5,
     beta: float = 3.0,
+    completion_bias_eta: float = 0.0,
     ablation_component: str | None = None,
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
@@ -517,6 +535,8 @@ def diverse_regex(
         Diversity reward scale factor.
     beta
         Diversity penalty scale factor.
+    completion_bias_eta
+        Small bonus weight for tokens that move the DFA closer to acceptance.
     ablation_component
         If not ``None``, one of ``"no_reward"``, ``"no_penalty"``, or
         ``"no_range_scaling"``, to ablate the corresponding component of the
@@ -530,6 +550,7 @@ def diverse_regex(
         regex_str,
         gamma=gamma,
         beta=beta,
+        completion_bias_eta=completion_bias_eta,
         ablation_component=ablation_component,
         **generation_kwargs,
     )

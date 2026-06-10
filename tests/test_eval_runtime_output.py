@@ -24,6 +24,7 @@ def _args(**overrides):
         "top_k": None,
         "top_p": None,
         "temperature": None,
+        "completion_bias_eta": 0.0,
         "baseline": True,
         "baseline_backend": "internal",
         "seed": None,
@@ -46,6 +47,7 @@ def test_build_runtime_result_includes_timing_and_context():
     assert result["setting"] == "baseline"
     assert result["grammar"] == "css-color"
     assert result["parameters"]["temperature"] == 1.5
+    assert result["parameters"]["completion_bias_eta"] == 0.0
     assert result["parameters"]["baseline_backend"] == "internal"
     assert result["parameters"]["seed"] is None
     assert result["tokens"] == {"generated": 2031, "target": 2000}
@@ -75,6 +77,17 @@ def test_build_runtime_result_records_seed():
     assert result["parameters"]["seed"] == 42
 
 
+def test_build_runtime_result_records_completion_bias_eta():
+    result = build_runtime_result(
+        args=_args(completion_bias_eta=0.2),
+        total_token_num=100,
+        total_time=10.0,
+        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
+    )
+
+    assert result["parameters"]["completion_bias_eta"] == pytest.approx(0.2)
+
+
 def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
     monkeypatch.setattr(
         sys,
@@ -96,6 +109,18 @@ def test_parse_args_accepts_local_files_only(monkeypatch):
     args = parse_args()
 
     assert args.local_files_only is True
+
+
+def test_parse_args_accepts_completion_bias_eta(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval_runtime.py", "css-color", "--completion-bias-eta", "0.2"],
+    )
+
+    args = parse_args()
+
+    assert args.completion_bias_eta == pytest.approx(0.2)
 
 
 def test_require_outlines_version_accepts_expected_version(monkeypatch):
@@ -300,7 +325,10 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
     eval_runtime.main()
 
     assert calls["regex"] == eval_runtime.GRAMMAR_REGEX["css-color"]
-    assert calls["kwargs"] == {"temperature": 1.5}
+    assert calls["kwargs"] == {
+        "temperature": 1.5,
+        "completion_bias_eta": 0.0,
+    }
     assert calls["max_tokens"] == 2
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["setting"] == "diverse"
@@ -362,6 +390,42 @@ def test_main_forwards_local_files_only_to_model_and_tokenizer(
 
     assert calls["model_kwargs"]["local_files_only"] is True
     assert calls["tokenizer_kwargs"]["local_files_only"] is True
+
+
+def test_main_forwards_completion_bias_eta_to_diverse_guide(monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
+        calls["kwargs"] = kwargs
+
+        def generate(prompt, max_tokens=None):
+            return "abcde"
+
+        return generate
+
+    _install_runtime_fakes(monkeypatch, fake_diverse_guide)
+    monkeypatch.setattr(eval_runtime, "DiverseGuide", fake_diverse_guide)
+    output = tmp_path / "runtime.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "eval_runtime.py",
+            "css-color",
+            "-n",
+            "5",
+            "--max-tokens",
+            "2",
+            "--completion-bias-eta",
+            "0.2",
+            "--output",
+            str(output),
+        ],
+    )
+
+    eval_runtime.main()
+
+    assert calls["kwargs"]["completion_bias_eta"] == pytest.approx(0.2)
 
 
 def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_path):

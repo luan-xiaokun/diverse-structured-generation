@@ -29,6 +29,10 @@ class DiverseGuideDFA:
         """Returns the allowed token ids for a given state."""
         ...
 
+    def get_distance_to_accepting(self, state: int) -> int:
+        """Returns the shortest token-level distance to an accepting state."""
+        ...
+
     def get_next_byte_state(self, state: int, char: int) -> int:
         """Gets the next byte state from the current state."""
         ...
@@ -66,7 +70,12 @@ class DiverseGuideDFA:
         ...
 
     def compute_adjustments(
-        self, state: int, beta: float, no_reward: bool, no_penalty: bool
+        self,
+        state: int,
+        beta: float,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
     ) -> tuple[list[int], list[float]]:
         """Computes diversity adjustment values for the given state."""
         ...

@@ -40,6 +40,7 @@ pub struct DfaIndex {
     token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
     allowed_token_infos: HashMap<StateId, Vec<AllowedTokenInfo>>,
     allowed_token_ids: HashMap<StateId, Vec<TokenId>>,
+    distance_to_accepting: HashMap<StateId, u32>,
     state_to_idx: HashMap<StateId, usize>,
     edge_to_idx: HashMap<(StateId, StateId), usize>,
     vocabulary: HashMap<TokenId, String>,
@@ -152,6 +153,8 @@ impl DfaIndex {
         token_transitions.retain(|_, token_map| !token_map.is_empty());
         token_state_paths.retain(|_, path_map| !path_map.is_empty());
 
+        let distance_to_accepting =
+            Self::build_distance_to_accepting(&token_transitions, &final_states);
         let mut allowed_token_infos =
             Self::build_allowed_token_infos(&token_transitions, &token_state_paths);
         let (state_to_idx, edge_to_idx) = Self::build_dense_counter_indices(&allowed_token_infos);
@@ -175,6 +178,7 @@ impl DfaIndex {
             token_state_paths,
             allowed_token_infos,
             allowed_token_ids,
+            distance_to_accepting,
             state_to_idx,
             edge_to_idx,
             vocabulary,
@@ -234,6 +238,41 @@ impl DfaIndex {
         }
 
         (state_to_idx, edge_to_idx)
+    }
+
+    fn build_distance_to_accepting(
+        token_transitions: &HashMap<StateId, HashMap<TokenId, StateId>>,
+        final_states: &HashSet<StateId>,
+    ) -> HashMap<StateId, u32> {
+        let mut rev_transitions: HashMap<StateId, Vec<StateId>> = HashMap::default();
+        for (from_state, token_map) in token_transitions {
+            for to_state in token_map.values() {
+                rev_transitions.entry(*to_state).or_default().push(*from_state);
+            }
+        }
+
+        let mut distance_to_accepting: HashMap<StateId, u32> = HashMap::default();
+        let mut queue: VecDeque<StateId> = VecDeque::new();
+        for &final_state in final_states {
+            distance_to_accepting.insert(final_state, 0);
+            queue.push_back(final_state);
+        }
+
+        while let Some(current_state) = queue.pop_front() {
+            let current_distance = distance_to_accepting[&current_state];
+            if let Some(predecessors) = rev_transitions.get(&current_state) {
+                for &prev_state in predecessors {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        distance_to_accepting.entry(prev_state)
+                    {
+                        entry.insert(current_distance + 1);
+                        queue.push_back(prev_state);
+                    }
+                }
+            }
+        }
+
+        distance_to_accepting
     }
 
     fn attach_dense_counter_indices(
@@ -372,6 +411,13 @@ impl DfaIndex {
         self.allowed_token_ids
             .get(&state)
             .cloned()
+            .ok_or_else(|| Error::InvalidState(state as usize))
+    }
+
+    pub fn get_distance_to_accepting(&self, state: StateId) -> Result<u32> {
+        self.distance_to_accepting
+            .get(&state)
+            .copied()
             .ok_or_else(|| Error::InvalidState(state as usize))
     }
 
@@ -609,6 +655,10 @@ impl DiverseGuideDFA {
         self.index.get_allowed_token_ids(state)
     }
 
+    pub fn get_distance_to_accepting(&self, state: StateId) -> Result<u32> {
+        self.index.get_distance_to_accepting(state)
+    }
+
     pub fn get_next_byte_state(&self, state: StateId, byte: Byte) -> Result<StateId> {
         self.index.get_next_byte_state(state, byte)
     }
@@ -701,14 +751,19 @@ impl DiverseGuideDFA {
         beta: f32,
         no_reward: bool,
         no_penalty: bool,
+        completion_bias_eta: f32,
     ) -> Result<TokenAdjustments> {
         let counts = self.compute_counts(state)?;
+        let current_distance = self.index.get_distance_to_accepting(state)? as f32;
         let reward_sum: f32 = counts.reward_counts.iter().map(|&count| count as f32).sum();
         let reward_numerator = (1.0 + reward_sum).ln();
         let mut adjustments = Vec::with_capacity(counts.token_ids.len());
 
-        for (&reward_count, &penalty_count) in
-            counts.reward_counts.iter().zip(&counts.penalty_counts)
+        for ((&token_id, &reward_count), &penalty_count) in counts
+            .token_ids
+            .iter()
+            .zip(&counts.reward_counts)
+            .zip(&counts.penalty_counts)
         {
             let reward = if no_reward {
                 1.0
@@ -720,7 +775,17 @@ impl DiverseGuideDFA {
             } else {
                 beta * (penalty_count as f32).powi(2)
             };
-            adjustments.push(reward / penalty);
+            let base_adjustment = reward / penalty;
+            let completion_bonus = if completion_bias_eta > 0.0 {
+                let next_distance =
+                    self.index.get_distance_to_accepting(self.index.get_next_token_state(state, token_id)?)?
+                        as f32;
+                let progress = (current_distance - next_distance).max(0.0);
+                completion_bias_eta * progress / (1.0 + current_distance)
+            } else {
+                0.0
+            };
+            adjustments.push(base_adjustment + completion_bonus);
         }
 
         Ok(TokenAdjustments {
@@ -921,7 +986,7 @@ mod tests {
             .compute_counts(initial)
             .expect("compute_counts should succeed");
         let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false)
+            .compute_adjustments(initial, 3.0, false, false, 0.0)
             .expect("compute_adjustments should succeed");
 
         assert_eq!(adjustments.token_ids, counts.token_ids);
@@ -946,7 +1011,7 @@ mod tests {
             .compute_counts(initial)
             .expect("compute_counts should succeed");
         let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false)
+            .compute_adjustments(initial, 3.0, false, false, 0.0)
             .expect("compute_adjustments should succeed");
         let reward_sum: u32 = counts.reward_counts.iter().sum();
 
@@ -981,7 +1046,7 @@ mod tests {
         let reward_sum: u32 = counts.reward_counts.iter().sum();
         for (no_reward, no_penalty) in [(true, false), (false, true), (true, true)] {
             let adjustments = dfa
-                .compute_adjustments(initial, 3.0, no_reward, no_penalty)
+                .compute_adjustments(initial, 3.0, no_reward, no_penalty, 0.0)
                 .expect("compute_adjustments should succeed");
             assert_eq!(adjustments.token_ids, counts.token_ids);
             for ((&reward_count, &penalty_count), &adjustment) in counts
@@ -1229,9 +1294,46 @@ mod tests {
         assert!(matches!(invalid_state_err, Error::InvalidState(_)));
 
         let invalid_adjustments_err = dfa
-            .compute_adjustments(u32::MAX, 3.0, false, false)
+            .compute_adjustments(u32::MAX, 3.0, false, false, 0.0)
             .expect_err("invalid state should fail");
         assert!(matches!(invalid_adjustments_err, Error::InvalidState(_)));
+    }
+
+    #[test]
+    fn distance_to_accepting_matches_token_level_shortest_path() {
+        let dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        let final_state = *dfa
+            .get_state_sequence("ab")
+            .expect("state sequence must be valid")
+            .last()
+            .expect("non-empty sequence");
+
+        assert_eq!(dfa.get_distance_to_accepting(initial).unwrap(), 1);
+        assert_eq!(dfa.get_distance_to_accepting(final_state).unwrap(), 0);
+    }
+
+    #[test]
+    fn completion_bias_bonus_prefers_tokens_closer_to_acceptance() {
+        let mut vocab = Map::default();
+        vocab.insert(999, "<eos>".to_string());
+        vocab.insert(1, "a".to_string());
+        vocab.insert(4, "b".to_string());
+        vocab.insert(2, "ab".to_string());
+        let dfa = DiverseGuideDFA::new("(?:ab)$", 999, vocab).expect("dfa must build");
+        let initial = dfa.get_initial_state();
+        let adjustments = dfa
+            .compute_adjustments(initial, 3.0, false, false, 0.2)
+            .expect("compute_adjustments should succeed");
+        let by_token: Map<TokenId, f32> = adjustments
+            .token_ids
+            .iter()
+            .copied()
+            .zip(adjustments.adjustments.iter().copied())
+            .collect();
+
+        assert_close(*by_token.get(&1).expect("token a must exist"), 0.0);
+        assert_close(*by_token.get(&2).expect("token ab must exist"), 0.1);
     }
 
     #[test]

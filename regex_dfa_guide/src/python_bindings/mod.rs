@@ -86,6 +86,11 @@ impl PyDiverseGuideDFA {
         Ok(dfa_guard.get_allowed_token_ids(state)?)
     }
 
+    fn get_distance_to_accepting(&self, state: u32) -> PyResult<u32> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        Ok(dfa_guard.get_distance_to_accepting(state)?)
+    }
+
     fn get_next_byte_state(&self, state: u32, input: u8) -> PyResult<u32> {
         let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
         Ok(dfa_guard.get_next_byte_state(state, input)?)
@@ -146,9 +151,16 @@ impl PyDiverseGuideDFA {
         beta: f32,
         no_reward: bool,
         no_penalty: bool,
+        completion_bias_eta: f32,
     ) -> PyResult<(Vec<u64>, Vec<f32>)> {
         let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
-        let adjustments = dfa_guard.compute_adjustments(state, beta, no_reward, no_penalty)?;
+        let adjustments = dfa_guard.compute_adjustments(
+            state,
+            beta,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+        )?;
         Ok((adjustments.token_ids, adjustments.adjustments))
     }
 

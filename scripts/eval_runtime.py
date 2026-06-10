@@ -96,6 +96,7 @@ def build_runtime_result(
             "temperature": args.temperature,
             "top_k": args.top_k,
             "top_p": args.top_p,
+            "completion_bias_eta": args.completion_bias_eta,
             "baseline_backend": getattr(args, "baseline_backend", "internal"),
             "seed": args.seed,
         },
@@ -145,6 +146,12 @@ def parse_args():
         "--temperature", type=float, default=None, help="The temperature for sampling."
     )
     parser.add_argument(
+        "--completion-bias-eta",
+        type=float,
+        default=0.0,
+        help="Small completion-proximity bias weight. Use 0.0 to disable.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -172,6 +179,8 @@ def parse_args():
         parser.error("-n must be positive")
     if args.max_tokens <= 0:
         parser.error("--max-tokens must be positive")
+    if args.completion_bias_eta < 0.0:
+        parser.error("--completion-bias-eta must be non-negative")
     if args.baseline_backend == "outlines" and not args.baseline:
         parser.error("--baseline-backend outlines requires --baseline")
     return args
@@ -223,7 +232,13 @@ def main():
             print("Baseline backend: internal mask-only")
             generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
-        generator = DiverseGuide(model, tokenizer, regex, **generation_kwargs)
+        generator = DiverseGuide(
+            model,
+            tokenizer,
+            regex,
+            completion_bias_eta=args.completion_bias_eta,
+            **generation_kwargs,
+        )
 
     total_token_num = 0
     total_time = 0.0

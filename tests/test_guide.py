@@ -298,6 +298,22 @@ def test_mask_only_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
     assert out[0, 20].item() == float("-inf")
 
 
+def test_distance_to_accepting_terminal_state_is_zero(mock_tokenizer):
+    rust_guide = gr.DiverseRegexGuide("[ab]", mock_tokenizer)
+    python_guide = gp.DiverseRegexGuide("[ab]", mock_tokenizer)
+
+    assert rust_guide.get_distance_to_accepting(-1) == 0
+    assert python_guide.get_distance_to_accepting(-1) == 0
+
+
+@pytest.mark.parametrize(
+    "processor_cls", [gr.DiverseRegexLogitsProcessor, gp.DiverseRegexLogitsProcessor]
+)
+def test_completion_bias_eta_validation(processor_cls, mock_tokenizer):
+    with pytest.raises(ValueError):
+        processor_cls("[ab]", mock_tokenizer, completion_bias_eta=-0.1)
+
+
 def test_mask_only_does_not_update_diversity_counters(mock_tokenizer):
     proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
     initial = proc.guide.initial_state
@@ -633,16 +649,20 @@ def test_python_processor_state_branches():
 def test_python_adapter_and_factory_coverage():
     tok = _CoverageTokenizer(pad_token_id=None)
     model = _CoverageModel()
-    proc = gp.DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.5, beta=3.0)
+    proc = gp.DiverseRegexLogitsProcessor(
+        "[ab]", tok, gamma=0.5, beta=3.0, completion_bias_eta=0.2
+    )
     adapter = gp.StatefulSequenceGeneratorAdapter(model, tok, proc)
     assert adapter.generation_defaults["pad_token_id"] == tok.eos_token_id
     assert isinstance(adapter("prompt", max_tokens=2), str)
     adapter.update_generated_content("a")
     assert sum(proc.transition_counter.values()) >= 1
 
-    d = gp.diverse_regex(model, tok, "[ab]")
+    d = gp.diverse_regex(model, tok, "[ab]", completion_bias_eta=0.2)
     b = gp.baseline_regex(model, tok, "[ab]")
     assert isinstance(d, gp.DiverseGuide)
+    assert proc.completion_bias_eta == 0.2
+    assert d.completion_bias_eta == 0.2
     assert b.logits_processor.gamma == 0.0
 
 
@@ -681,12 +701,15 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     adapter.update_generated_content("a")
     baseline = gr.baseline_regex(model, tok, "[ab]")
     assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
-    guide = gr.DiverseGuide(model, tok, "[ab]", gamma=0.5, beta=3.0)
+    guide = gr.DiverseGuide(
+        model, tok, "[ab]", gamma=0.5, beta=3.0, completion_bias_eta=0.2
+    )
     assert isinstance(guide, gr.StatefulSequenceGeneratorAdapter)
     assert isinstance(guide.logits_processor, gr.DiverseRegexLogitsProcessor)
     assert guide.regex_str == "[ab]"
     assert guide.gamma == 0.5
     assert guide.beta == 3.0
+    assert guide.completion_bias_eta == 0.2
 
     a1 = gr.diverse_regex(model, tok, "[ab]", ablation_component="reward")
     a2 = gr.diverse_regex(model, tok, "[ab]", ablation_component="penalty")

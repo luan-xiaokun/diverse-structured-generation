@@ -73,6 +73,14 @@ def test_get_next_token_state(dfa_multi):
     assert state_after_b != initial
 
 
+def test_distance_to_accepting_matches_simple_regex(dfa_multi):
+    initial = dfa_multi.get_initial_state()
+    final_state = dfa_multi.get_next_token_state(initial, 10)
+
+    assert dfa_multi.get_distance_to_accepting(initial) == 1
+    assert dfa_multi.get_distance_to_accepting(final_state) == 0
+
+
 # ---------------------------------------------------------------------------
 # Byte-level transitions
 # ---------------------------------------------------------------------------
@@ -213,7 +221,7 @@ def test_compute_adjustments_matches_python_formula(dfa_multi):
 
     token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
     adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
-        initial, 3.0, False, False
+        initial, 3.0, False, False, 0.0
     )
 
     assert adjustment_token_ids == token_ids
@@ -238,7 +246,7 @@ def test_compute_adjustments_ablation_flags_match_python_formula(
 
     token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
     adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
-        initial, 3.0, no_reward, no_penalty
+        initial, 3.0, no_reward, no_penalty, 0.0
     )
 
     assert adjustment_token_ids == token_ids
@@ -255,7 +263,23 @@ def test_compute_adjustments_ablation_flags_match_python_formula(
 
 def test_compute_adjustments_invalid_state_raises_value_error(dfa_multi):
     with pytest.raises(ValueError):
-        dfa_multi.compute_adjustments(2**32 - 1, 3.0, False, False)
+        dfa_multi.compute_adjustments(2**32 - 1, 3.0, False, False, 0.0)
+
+
+def test_compute_adjustments_completion_bias_bonus():
+    vocab = {
+        99: "<eos>",
+        10: "a",
+        15: "b",
+        20: "ab",
+    }
+    dfa = DiverseGuideDFA("(?:ab)$", 99, vocab)
+    initial = dfa.get_initial_state()
+    token_ids, adjustments = dfa.compute_adjustments(initial, 3.0, False, False, 0.2)
+
+    by_token = dict(zip(token_ids, adjustments, strict=True))
+    assert by_token[10] == pytest.approx(0.0)
+    assert by_token[20] == pytest.approx(0.1, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------

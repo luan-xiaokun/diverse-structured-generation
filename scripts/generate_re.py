@@ -43,6 +43,7 @@ class GeneratedData:
     top_p: float | None
     temperature: float | None
     seed: int | None
+    completion_bias_eta: float
     samples: list[str]
     elapsed_seconds: float | None = None
     attempted_batches: int | None = None
@@ -60,6 +61,7 @@ class GeneratedData:
             "top_p": self.top_p,
             "temperature": self.temperature,
             "seed": self.seed,
+            "completion_bias_eta": self.completion_bias_eta,
             "samples": self.samples,
             "elapsed_seconds": self.elapsed_seconds,
             "attempted_batches": self.attempted_batches,
@@ -79,6 +81,7 @@ class GeneratedData:
             top_p=data["top_p"],
             temperature=data["temperature"],
             seed=data.get("seed"),
+            completion_bias_eta=data.get("completion_bias_eta", 0.0),
             samples=data["samples"],
             elapsed_seconds=data.get("elapsed_seconds"),
             attempted_batches=data.get("attempted_batches"),
@@ -134,6 +137,12 @@ def parse_args():
         "--temperature", type=float, default=None, help="The temperature for sampling."
     )
     parser.add_argument(
+        "--completion-bias-eta",
+        type=float,
+        default=0.0,
+        help="Small completion-proximity bias weight. Use 0.0 to disable.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -174,6 +183,8 @@ def main():
         raise ValueError("--stdout-only cannot be used together with --output.")
     if args.batch_size <= 0:
         raise ValueError("--batch-size must be a positive integer.")
+    if args.completion_bias_eta < 0.0:
+        raise ValueError("--completion-bias-eta must be non-negative")
 
     grammar = args.grammar
     if grammar not in GRAMMAR_REGEX:
@@ -216,6 +227,7 @@ def main():
             model,
             tokenizer,
             regex,
+            completion_bias_eta=args.completion_bias_eta,
             ablation_component=args.ablation_component,
             **generation_kwargs,
         )
@@ -230,6 +242,7 @@ def main():
         args.top_p,
         args.temperature,
         args.seed,
+        args.completion_bias_eta,
         [],
         0.0,
         0,
