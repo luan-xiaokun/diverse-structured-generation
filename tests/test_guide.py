@@ -664,7 +664,8 @@ def test_python_adapter_and_factory_coverage():
     assert adapter.generation_defaults["pad_token_id"] == tok.eos_token_id
     assert isinstance(adapter("prompt", max_tokens=2), str)
     adapter.update_generated_content("a")
-    assert sum(proc.transition_counter.values()) >= 1
+    final_state = proc.guide.dfa.get_state_sequence("a")[-1]
+    assert proc.transition_counter[(final_state, final_state)] == 1
 
     d = gp.diverse_regex(model, tok, "[ab]", completion_bias_eta=0.2)
     b = gp.baseline_regex(model, tok, "[ab]")

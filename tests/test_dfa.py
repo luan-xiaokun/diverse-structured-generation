@@ -184,6 +184,26 @@ def test_update_path_counter_for_token_matches_string_replay(vocab_ab):
     )
 
 
+def test_update_path_counter_counts_eos_for_complete_string(dfa_multi):
+    initial = dfa_multi.get_initial_state()
+    final_state = dfa_multi.get_next_token_state(initial, 10)
+
+    dfa_multi.update_path_counter("a")
+
+    token_ids, reward_counts, _ = dfa_multi.compute_counts(final_state)
+    assert dict(zip(token_ids, reward_counts))[99] == 1.0
+
+
+def test_update_path_counter_raw_string_does_not_count_eos(dfa_multi):
+    initial = dfa_multi.get_initial_state()
+    final_state = dfa_multi.get_next_token_state(initial, 10)
+
+    dfa_multi.update_path_counter_raw_string("a")
+
+    token_ids, reward_counts, _ = dfa_multi.compute_counts(final_state)
+    assert dict(zip(token_ids, reward_counts))[99] == 0.0
+
+
 def test_reset_path_counter(dfa_multi):
     dfa_multi.update_path_counter("a")
     dfa_multi.reset_path_counter()

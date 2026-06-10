@@ -117,6 +117,12 @@ impl PyDiverseGuideDFA {
         Ok(())
     }
 
+    fn update_path_counter_raw_string(&self, string: &str) -> PyResult<()> {
+        let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
+        dfa_guard.update_path_counter_raw_string(string)?;
+        Ok(())
+    }
+
     fn update_path_counter_for_token(&self, state: u32, token_id: u64) -> PyResult<()> {
         let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
         dfa_guard.update_path_counter_for_token(state, token_id)?;
