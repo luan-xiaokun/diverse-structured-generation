@@ -340,8 +340,8 @@ preflight_cuda
 
 echo "[start] data_root=$DATA_ROOT log_dir=$LOG_DIR summary_file=$SUMMARY_FILE sample_count=$SAMPLE_COUNT seed=$SEED default_max_tokens=$DEFAULT_MAX_TOKENS json_max_tokens=$JSON_MAX_TOKENS require_cuda=$REQUIRE_CUDA expected_device=$EXPECTED_MODEL_PARAMETER_DEVICE"
 for model in "${MODELS[@]}"; do
-  for method in "${METHODS[@]}"; do
-    for grammar in "${GRAMMARS[@]}"; do
+  for grammar in "${GRAMMARS[@]}"; do
+    for method in "${METHODS[@]}"; do
       run_one "$method" "$model" "$grammar"
     done
   done
