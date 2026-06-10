@@ -356,7 +356,7 @@ See [examples/](examples/) for more complete usage patterns.
 
 ## API Reference
 
-### `DiverseGuide(model, tokenizer, regex_str, gamma=0.5, beta=3.0, **generation_kwargs)`
+### `DiverseGuide(model, tokenizer, regex_str, gamma=0.15, completion_bias_eta=0.15, **generation_kwargs)`
 
 Creates a stateful generator configured for diverse regex-constrained generation.
 The returned object is callable for one sample and also exposes
@@ -383,8 +383,8 @@ diversity adjustment and is used as the internal comparison baseline.
 
 | Parameter | Default | Effect |
 |-----------|---------|--------|
-| `gamma` | `0.5` | Reward scale. Higher values more aggressively boost under-explored paths. Use `baseline_regex` for the internal regex-only baseline. |
-| `beta` | `3.0` | Penalty scale. Higher values more strongly suppress tokens reused within the current batch. |
+| `gamma` | `0.15` | Diversity scale. Higher values more aggressively boost under-explored paths relative to locally repeated ones. Use `baseline_regex` for the internal regex-only baseline. |
+| `completion_bias_eta` | `0.15` | Completion bonus scale. Higher values more strongly prefer tokens that move the DFA closer to an accepting state. |
 
 ---
 

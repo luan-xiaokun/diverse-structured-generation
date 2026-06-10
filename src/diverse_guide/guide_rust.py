@@ -12,6 +12,9 @@ try:
 except ImportError:
     from regex_dfa_guide.regex_dfa_guide_rs import DiverseGuideDFA
 
+from .guide_python import (
+    DiverseRegexLogitsProcessor as PythonDiverseRegexLogitsProcessor,
+)
 from .vocab import build_token_id_map
 
 
@@ -59,6 +62,12 @@ class DiverseRegexGuide:
     def get_next_state(self, state: int, token_id: int) -> int:
         """Advance the DFA by one token and return the resulting state id."""
         return self.dfa.get_next_token_state(state, token_id)
+
+    def get_distance_to_accepting(self, state: int) -> int:
+        """Return the shortest token-level distance to an accepting state."""
+        if state == -1:
+            return 0
+        return self.dfa.get_distance_to_accepting(state)
 
     def is_final_state(self, state: int) -> bool:
         """Return ``True`` if *state* is an accepting (final) state."""
@@ -134,6 +143,14 @@ class RegexMaskLogitsProcessor(LogitsProcessor):
         scores[batch_indices_concat, allowed_tokens_concat] = allowed_scores
         return scores
 
+    def update_generated_content(self, generated_content: str) -> None:
+        """Baseline processor has no cross-call diversity state to update."""
+        del generated_content
+
+    def update_generated_token_ids(self, generated_token_ids: torch.Tensor) -> None:
+        """Baseline processor has no cross-call diversity state to update."""
+        del generated_token_ids
+
 
 class DiverseRegexLogitsProcessor(LogitsProcessor):
     """HuggingFace ``LogitsProcessor`` that enforces a regex and promotes diversity.
@@ -151,7 +168,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
            \\Delta_i = \\gamma \\cdot \\text{logits\\_range}
                        \\cdot \\frac{\\log(1 + \\sum_j c^{\\text{path}}_j)}
                                     {1 + c^{\\text{path}}_i}
-                       \\cdot \\frac{1}{\\beta \\cdot (c^{\\text{local}}_i)^2}
+                       \\cdot \\frac{1}{(c^{\\text{local}}_i)^2}
 
     The path counter (global, cross-sequence) is updated incrementally as newly
     generated token ids are consumed.
@@ -162,8 +179,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self,
         regex_string: str,
         tokenizer: PreTrainedTokenizerBase,
-        gamma: float = 0.5,
-        beta: float = 3.0,
+        gamma: float = 0.15,
+        completion_bias_eta: float = 0.15,
+        path_frequency_estimator: str = "harmonic",
         no_reward: bool = False,
         no_penalty: bool = False,
         no_range_scaling: bool = False,
@@ -180,9 +198,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             on under-explored paths. Set to ``0`` to disable the reward
             adjustment for this processor. The public internal baseline uses
             :class:`RegexMaskLogitsProcessor`.
-        beta:
-            Penalty scale factor.  Higher values more strongly suppress tokens
-            already used heavily within the current batch step.
+        completion_bias_eta:
+            Small bonus weight for tokens that move the DFA closer to an
+            accepting state. Set to ``0.0`` to disable the completion bias.
+        path_frequency_estimator:
+            Either ``"min"`` for the original token-path frequency estimate or
+            ``"harmonic"`` for shifted harmonic-mean path frequency.
         no_reward:
             If ``True``, do not apply reward adjustments. For ablation purposes.
         no_penalty:
@@ -194,11 +215,25 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         guide = DiverseRegexGuide(regex_string, tokenizer)
         self.guide = guide
         self.dfa = guide.dfa
+        if completion_bias_eta < 0.0:
+            raise ValueError("completion_bias_eta must be non-negative")
+        if path_frequency_estimator not in {"min", "harmonic"}:
+            raise ValueError("path_frequency_estimator must be 'min' or 'harmonic'")
         self.gamma = gamma
-        self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
+        self.path_frequency_estimator = path_frequency_estimator
         self.no_reward = no_reward
         self.no_penalty = no_penalty
         self.no_range_scaling = no_range_scaling
+        self._python_fallback: PythonDiverseRegexLogitsProcessor | None = None
+        if path_frequency_estimator == "min":
+            self._python_fallback = PythonDiverseRegexLogitsProcessor(
+                regex_string,
+                tokenizer,
+                gamma=gamma,
+                completion_bias_eta=completion_bias_eta,
+                path_frequency_estimator="min",
+            )
 
         self._seq_start_idx: int | None = None
         self._guide_states_by_row: list[int] | None = None
@@ -207,6 +242,8 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
     def reset(self) -> None:
         """Reset per-call state. Must be called before each new ``model.generate()``
         call."""
+        if self._python_fallback is not None:
+            self._python_fallback.reset()
         self._seq_start_idx = None
         self._guide_states_by_row = None
         self._processed_lengths_by_row = None
@@ -246,13 +283,13 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
 
     def _compute_adjustments_from_counts(
         self,
-        reward_counts: list[int],
+        reward_counts: list[float],
         penalty_counts: list[int],
     ) -> torch.FloatTensor:
         reward_counts_tensor = torch.tensor(reward_counts, dtype=torch.float)
         penalty_counts_tensor = torch.tensor(penalty_counts, dtype=torch.float)
         reward = torch.log(1 + reward_counts_tensor.sum()) / (1 + reward_counts_tensor)
-        penalty = self.beta * penalty_counts_tensor**2
+        penalty = penalty_counts_tensor**2
 
         if self.no_reward:
             reward = torch.ones_like(reward_counts_tensor)
@@ -271,9 +308,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
 
         allowed_tokens, adjustments = self.dfa.compute_adjustments(
             guide_state,
-            self.beta,
             self.no_reward,
             self.no_penalty,
+            self.completion_bias_eta,
         )
         return (
             torch.tensor(allowed_tokens, dtype=torch.long),
@@ -285,6 +322,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
     ) -> torch.FloatTensor:
         """Apply masking and diversity adjustment; called by ``model.generate`` at each
         step."""
+        if self._python_fallback is not None:
+            return self._python_fallback(input_ids, scores)
+
         if self._seq_start_idx is None:
             self._seq_start_idx = input_ids.shape[1]
         self._ensure_rows(input_ids.shape[0])
@@ -326,6 +366,24 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         )
 
         return scores
+
+    def update_generated_content(self, generated_content: str) -> None:
+        if self._python_fallback is not None:
+            self._python_fallback.update_generated_content(generated_content)
+        else:
+            # Rust-backed harmonic mode updates counters incrementally from token ids.
+            del generated_content
+
+    def update_generated_token_ids(self, generated_token_ids: torch.Tensor) -> None:
+        """Consume generated token ids that were never seen by a later logits call."""
+        if self._python_fallback is not None:
+            return
+
+        if generated_token_ids.ndim == 1:
+            generated_token_ids = generated_token_ids.unsqueeze(0)
+        self._ensure_rows(generated_token_ids.shape[0])
+        for row, gen_ids in enumerate(generated_token_ids):
+            self._advance_row(row, gen_ids)
 
 
 class StatefulSequenceGeneratorAdapter:
@@ -402,7 +460,10 @@ class StatefulSequenceGeneratorAdapter:
             **gen_kwargs,
         )
         new_ids = output_ids[0, inputs["input_ids"].shape[1] :]
-        return self.tokenizer.decode(new_ids, skip_special_tokens=True)
+        self.logits_processor.update_generated_token_ids(new_ids)
+        text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
+        self.logits_processor.update_generated_content(text)
+        return text
 
     def generate_batch(
         self, prompt: str, n: int, max_tokens: int | None = None, **kwargs
@@ -434,10 +495,12 @@ class StatefulSequenceGeneratorAdapter:
         )
 
         results = []
+        self.logits_processor.update_generated_token_ids(output_ids[:, prompt_len:])
         for i in range(n):
             new_ids = output_ids[i, prompt_len:]
             text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
             results.append(text)
+            self.logits_processor.update_generated_content(text)
 
         return results
 
@@ -445,10 +508,10 @@ class StatefulSequenceGeneratorAdapter:
         """Update the global path counter with a previously generated string.
 
         Deprecated. Runtime path counters are updated incrementally from newly
-        generated token ids inside the logits processor, avoiding full-text
-        replay and tokenizer re-decoding ambiguity.
+        generated token ids inside the Rust logits processor. The pure-Python
+        min-estimator fallback still uses this hook for its Python counters.
         """
-        _ = generated_content
+        self.logits_processor.update_generated_content(generated_content)
 
 
 class DiverseGuide(StatefulSequenceGeneratorAdapter):
@@ -465,8 +528,9 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizerBase,
         regex_str: str,
-        gamma: float = 0.5,
-        beta: float = 3.0,
+        gamma: float = 0.15,
+        completion_bias_eta: float = 0.15,
+        path_frequency_estimator: str = "harmonic",
         ablation_component: str | None = None,
         **generation_kwargs,
     ):
@@ -477,7 +541,8 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
             regex_str,
             tokenizer,
             gamma=gamma,
-            beta=beta,
+            completion_bias_eta=completion_bias_eta,
+            path_frequency_estimator=path_frequency_estimator,
             no_reward=no_reward,
             no_penalty=no_penalty,
             no_range_scaling=no_range_scaling,
@@ -485,7 +550,8 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
         self.regex_str = regex_str
         self.gamma = gamma
-        self.beta = beta
+        self.completion_bias_eta = completion_bias_eta
+        self.path_frequency_estimator = path_frequency_estimator
         self.ablation_component = ablation_component
 
 
@@ -493,8 +559,9 @@ def diverse_regex(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     regex_str: str,
-    gamma: float = 0.5,
-    beta: float = 3.0,
+    gamma: float = 0.15,
+    completion_bias_eta: float = 0.15,
+    path_frequency_estimator: str = "harmonic",
     ablation_component: str | None = None,
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
@@ -513,8 +580,10 @@ def diverse_regex(
         The regular expression that output must follow.
     gamma
         Diversity reward scale factor.
-    beta
-        Diversity penalty scale factor.
+    completion_bias_eta
+        Small bonus weight for tokens that move the DFA closer to acceptance.
+    path_frequency_estimator
+        Either ``"min"`` or ``"harmonic"`` for token-path frequency estimation.
     ablation_component
         If not ``None``, one of ``"no_reward"``, ``"no_penalty"``, or
         ``"no_range_scaling"``, to ablate the corresponding component of the
@@ -527,7 +596,8 @@ def diverse_regex(
         tokenizer,
         regex_str,
         gamma=gamma,
-        beta=beta,
+        completion_bias_eta=completion_bias_eta,
+        path_frequency_estimator=path_frequency_estimator,
         ablation_component=ablation_component,
         **generation_kwargs,
     )

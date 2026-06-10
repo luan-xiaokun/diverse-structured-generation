@@ -12,6 +12,7 @@ def _args(**kwargs):
         top_k=None,
         top_p=None,
         temperature=None,
+        path_frequency_estimator="harmonic",
         baseline=False,
     )
     defaults.update(kwargs)
@@ -46,6 +47,16 @@ def test_temperature():
 def test_ablation_component_for_diverse_runs():
     path = get_data_dir_path(_args(ablation_component="reward"))
     assert path == Path("data/diverse/qwen2.5-0.5b-instruct-no_reward")
+
+
+def test_min_path_frequency_estimator_for_diverse_runs():
+    path = get_data_dir_path(_args(path_frequency_estimator="min"))
+    assert path == Path("data/diverse/qwen2.5-0.5b-instruct-path_freq_min")
+
+
+def test_baseline_path_frequency_estimator_does_not_change_path():
+    path = get_data_dir_path(_args(baseline=True, path_frequency_estimator="min"))
+    assert path == Path("data/baseline/qwen2.5-0.5b-instruct")
 
 
 def test_all_sampling_params():

@@ -2,6 +2,8 @@ import json
 import sys
 from unittest.mock import Mock
 
+import pytest
+
 import scripts.generate_re as generate_re
 from scripts.generate_re import GeneratedData, set_generation_seed
 
@@ -17,6 +19,8 @@ def test_generated_data_round_trips_seed():
         top_p=None,
         temperature=None,
         seed=42,
+        completion_bias_eta=0.2,
+        path_frequency_estimator="min",
         samples=["#aabbcc"],
         elapsed_seconds=12.5,
         attempted_batches=3,
@@ -28,8 +32,12 @@ def test_generated_data_round_trips_seed():
     restored = GeneratedData.from_dict(payload)
 
     assert payload["seed"] == 42
+    assert payload["completion_bias_eta"] == 0.2
+    assert payload["path_frequency_estimator"] == "min"
     assert payload["elapsed_seconds"] == 12.5
     assert restored.seed == 42
+    assert restored.completion_bias_eta == 0.2
+    assert restored.path_frequency_estimator == "min"
     assert restored.attempted_batches == 3
     assert restored.accepted_samples == 1
     assert restored.rejected_samples == 2
@@ -51,6 +59,8 @@ def test_generated_data_accepts_legacy_payload_without_seed():
     )
 
     assert restored.seed is None
+    assert restored.completion_bias_eta == 0.15
+    assert restored.path_frequency_estimator == "harmonic"
     assert restored.elapsed_seconds is None
     assert restored.accepted_samples is None
 
@@ -104,6 +114,30 @@ def test_parse_args_accepts_local_files_only(monkeypatch):
     args = generate_re.parse_args()
 
     assert args.local_files_only is True
+
+
+def test_parse_args_accepts_completion_bias_eta(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--completion-bias-eta", "0.2"],
+    )
+
+    args = generate_re.parse_args()
+
+    assert args.completion_bias_eta == pytest.approx(0.2)
+
+
+def test_parse_args_accepts_path_frequency_estimator(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--path-frequency-estimator", "min"],
+    )
+
+    args = generate_re.parse_args()
+
+    assert args.path_frequency_estimator == "min"
 
 
 def test_main_forwards_local_files_only_and_records_generation_metrics(
@@ -185,8 +219,132 @@ def test_main_forwards_local_files_only_and_records_generation_metrics(
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert calls["model_kwargs"]["local_files_only"] is True
     assert calls["tokenizer_kwargs"]["local_files_only"] is True
+    assert calls["guide_kwargs"]["completion_bias_eta"] == pytest.approx(0.15)
+    assert calls["guide_kwargs"]["path_frequency_estimator"] == "harmonic"
     assert calls["guide_kwargs"]["ablation_component"] is None
     assert saved["accepted_samples"] == 2
     assert saved["rejected_samples"] == 1
     assert saved["attempted_batches"] == 2
     assert saved["elapsed_seconds"] == 3.0
+
+
+def test_main_forwards_completion_bias_eta(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return None
+
+    class FakeTokenizer:
+        def encode(self, text):
+            return list(text)
+
+    class FakeGuide:
+        def generate_batch(self, prompt, n, max_tokens):
+            return ["#aabbcc"]
+
+    def fake_model_from_pretrained(*args, **kwargs):
+        return FakeModel()
+
+    def fake_tokenizer_from_pretrained(*args, **kwargs):
+        return FakeTokenizer()
+
+    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
+        calls["guide_kwargs"] = kwargs
+        return FakeGuide()
+
+    monkeypatch.setattr(generate_re.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        generate_re.AutoModelForCausalLM,
+        "from_pretrained",
+        fake_model_from_pretrained,
+    )
+    monkeypatch.setattr(
+        generate_re.AutoTokenizer,
+        "from_pretrained",
+        fake_tokenizer_from_pretrained,
+    )
+    monkeypatch.setattr(generate_re, "DiverseGuide", fake_diverse_guide)
+    output = tmp_path / "samples.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_re.py",
+            "css-color",
+            "-n",
+            "1",
+            "--completion-bias-eta",
+            "0.2",
+            "--output",
+            str(output),
+        ],
+    )
+
+    generate_re.main()
+
+    assert calls["guide_kwargs"]["completion_bias_eta"] == pytest.approx(0.2)
+
+
+def test_main_forwards_path_frequency_estimator(monkeypatch, tmp_path):
+    calls = {}
+
+    class FakeModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            return None
+
+    class FakeTokenizer:
+        def encode(self, text):
+            return list(text)
+
+    class FakeGuide:
+        def generate_batch(self, prompt, n, max_tokens):
+            return ["#aabbcc"]
+
+    def fake_model_from_pretrained(*args, **kwargs):
+        return FakeModel()
+
+    def fake_tokenizer_from_pretrained(*args, **kwargs):
+        return FakeTokenizer()
+
+    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
+        calls["guide_kwargs"] = kwargs
+        return FakeGuide()
+
+    monkeypatch.setattr(generate_re.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(
+        generate_re.AutoModelForCausalLM,
+        "from_pretrained",
+        fake_model_from_pretrained,
+    )
+    monkeypatch.setattr(
+        generate_re.AutoTokenizer,
+        "from_pretrained",
+        fake_tokenizer_from_pretrained,
+    )
+    monkeypatch.setattr(generate_re, "DiverseGuide", fake_diverse_guide)
+    output = tmp_path / "samples.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "generate_re.py",
+            "css-color",
+            "-n",
+            "1",
+            "--path-frequency-estimator",
+            "min",
+            "--output",
+            str(output),
+        ],
+    )
+
+    generate_re.main()
+
+    assert calls["guide_kwargs"]["path_frequency_estimator"] == "min"

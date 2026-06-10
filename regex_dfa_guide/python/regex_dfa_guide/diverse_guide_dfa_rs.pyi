@@ -29,6 +29,10 @@ class DiverseGuideDFA:
         """Returns the allowed token ids for a given state."""
         ...
 
+    def get_distance_to_accepting(self, state: int) -> int:
+        """Returns the shortest token-level distance to an accepting state."""
+        ...
+
     def get_next_byte_state(self, state: int, char: int) -> int:
         """Gets the next byte state from the current state."""
         ...
@@ -65,14 +69,35 @@ class DiverseGuideDFA:
         """Resets the local state counter."""
         ...
 
-    def compute_counts(self, state: int) -> tuple[list[int], list[int], list[int]]:
+    def compute_counts(self, state: int) -> tuple[list[int], list[float], list[int]]:
         """Computes the counts for the given state."""
         ...
 
+    def compute_counts_with_estimator(
+        self, state: int, path_frequency_estimator: str
+    ) -> tuple[list[int], list[float], list[int]]:
+        """Computes the counts for the given state using an explicit estimator."""
+        ...
+
     def compute_adjustments(
-        self, state: int, beta: float, no_reward: bool, no_penalty: bool
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
     ) -> tuple[list[int], list[float]]:
         """Computes diversity adjustment values for the given state."""
+        ...
+
+    def compute_adjustments_with_estimator(
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
+        path_frequency_estimator: str,
+    ) -> tuple[list[int], list[float]]:
+        """Computes diversity adjustment values with an explicit estimator."""
         ...
 
     def __reduce__(self) -> tuple:

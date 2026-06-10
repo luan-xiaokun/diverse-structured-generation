@@ -21,6 +21,7 @@ def _args(**overrides):
         "top_k": None,
         "top_p": None,
         "temperature": None,
+        "path_frequency_estimator": "harmonic",
         "baseline": False,
         "d": 2,
         "s": 1,
@@ -68,6 +69,18 @@ def test_parse_args_rejects_non_positive_n(monkeypatch):
         parse_args()
 
 
+def test_parse_args_accepts_path_frequency_estimator(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["metrics_eval.py", "unit", "--path-frequency-estimator", "min"],
+    )
+
+    args = parse_args()
+
+    assert args.path_frequency_estimator == "min"
+
+
 def test_build_metrics_result_includes_reproduction_context(dfa_single, tmp_path):
     input_path = tmp_path / "samples.json"
     args = _args(grammar="unit", baseline=True, temperature=1.5)
@@ -88,6 +101,7 @@ def test_build_metrics_result_includes_reproduction_context(dfa_single, tmp_path
     assert result["model"] == "test/model"
     assert result["input_path"] == str(input_path)
     assert result["parameters"]["temperature"] == 1.5
+    assert result["parameters"]["path_frequency_estimator"] == "harmonic"
     assert result["metadata"]["timestamp_utc"] == "2026-04-27T00:00:00Z"
 
 
@@ -110,6 +124,7 @@ def test_build_metrics_result_uses_diverse_setting_and_parameter_schema(
         "temperature",
         "top_k",
         "top_p",
+        "path_frequency_estimator",
         "ablation_component",
         "ppl",
         "ppl_model",

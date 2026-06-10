@@ -15,6 +15,13 @@ from diverse_guide.guide_rust import DiverseRegexLogitsProcessor as RustProcesso
 REGEX = "[ab]+"  # simple regex: one-or-more a/b
 
 
+def _shifted_harmonic_mean(counts: list[int]) -> float:
+    if not counts:
+        return 0.0
+    reciprocal_sum = sum(1.0 / (count + 1.0) for count in counts)
+    return (len(counts) / reciprocal_sum) - 1.0
+
+
 # ---------------------------------------------------------------------------
 # DiverseRegexGuide equivalence
 # ---------------------------------------------------------------------------
@@ -76,8 +83,8 @@ def _make_scores(n_vocab: int = 100) -> torch.FloatTensor:
 
 def test_masking_same_allowed_set(mock_tokenizer):
     """Both processors should allow exactly the same token ids."""
-    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
-    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
+    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5)
+    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5)
 
     input_ids = torch.zeros(1, 0, dtype=torch.long)
     scores_py = _make_scores()
@@ -98,8 +105,8 @@ def test_zero_counter_adjustment_zero(mock_tokenizer):
     """With no prior sequences (all counters zero), the diversity adjustment is zero,
     so both processors should produce identical final scores (same masking, no shift).
     """
-    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
-    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
+    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5)
+    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5)
 
     input_ids = torch.zeros(1, 0, dtype=torch.long)
     scores_base = _make_scores()
@@ -114,10 +121,50 @@ def test_zero_counter_adjustment_zero(mock_tokenizer):
     )
 
 
+def test_completion_bias_adjustment_matches_between_python_and_rust(mock_tokenizer):
+    py_proc = PyProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, completion_bias_eta=0.2
+    )
+    rs_proc = RustProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, completion_bias_eta=0.2
+    )
+
+    input_ids = torch.zeros(1, 0, dtype=torch.long)
+    scores_base = _make_scores()
+
+    scores_py = py_proc(input_ids, scores_base.clone())
+    scores_rs = rs_proc(input_ids, scores_base.clone())
+
+    allowed = scores_py != float("-inf")
+    assert torch.allclose(scores_py[allowed], scores_rs[allowed], atol=1e-5), (
+        "Completion-bias scores differ between Python and Rust processors"
+    )
+
+
+def test_min_path_frequency_adjustment_matches_between_python_and_rust(
+    mock_tokenizer,
+):
+    py_proc = PyProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, path_frequency_estimator="min"
+    )
+    rs_proc = RustProcessor(
+        REGEX, mock_tokenizer, gamma=0.5, path_frequency_estimator="min"
+    )
+
+    input_ids = torch.zeros(1, 0, dtype=torch.long)
+    scores_base = _make_scores()
+
+    scores_py = py_proc(input_ids, scores_base.clone())
+    scores_rs = rs_proc(input_ids, scores_base.clone())
+
+    allowed = scores_py != float("-inf")
+    assert torch.allclose(scores_py[allowed], scores_rs[allowed], atol=1e-5)
+
+
 def test_counter_populated_compute_counts_equivalent(mock_tokenizer):
     """Rust compute_counts should match the Python counter semantics by token id."""
-    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
-    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5, beta=3.0)
+    py_proc = PyProcessor(REGEX, mock_tokenizer, gamma=0.5)
+    rs_proc = RustProcessor(REGEX, mock_tokenizer, gamma=0.5)
     state = py_proc.guide.initial_state
 
     path_states = list(py_proc.guide.dfa.get_state_sequence("ab"))
@@ -136,7 +183,7 @@ def test_counter_populated_compute_counts_equivalent(mock_tokenizer):
         state_seq = py_proc.guide.get_state_sequence_from_token_id(state, token_id)
         transitions = list(zip(state_seq, state_seq[1:]))
         reward_count = (
-            min(py_proc.transition_counter[t] for t in transitions)
+            _shifted_harmonic_mean([py_proc.transition_counter[t] for t in transitions])
             if transitions
             else 0
         )
