@@ -7,6 +7,8 @@ import json
 import random
 import re
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from time import perf_counter
 
@@ -43,6 +45,7 @@ class GeneratedData:
     top_p: float | None
     temperature: float | None
     seed: int | None
+    baseline_backend: str
     samples: list[str]
     elapsed_seconds: float | None = None
     attempted_batches: int | None = None
@@ -60,6 +63,7 @@ class GeneratedData:
             "top_p": self.top_p,
             "temperature": self.temperature,
             "seed": self.seed,
+            "baseline_backend": self.baseline_backend,
             "samples": self.samples,
             "elapsed_seconds": self.elapsed_seconds,
             "attempted_batches": self.attempted_batches,
@@ -79,6 +83,7 @@ class GeneratedData:
             top_p=data["top_p"],
             temperature=data["temperature"],
             seed=data.get("seed"),
+            baseline_backend=data.get("baseline_backend", "internal"),
             samples=data["samples"],
             elapsed_seconds=data.get("elapsed_seconds"),
             attempted_batches=data.get("attempted_batches"),
@@ -95,6 +100,58 @@ def set_generation_seed(seed: int | None) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def require_outlines_version(expected: str, group: str) -> None:
+    try:
+        installed = package_version("outlines")
+    except PackageNotFoundError as exc:
+        raise RuntimeError(
+            f"Outlines {expected} is required. "
+            f"Install it with `uv sync --group {group}`."
+        ) from exc
+
+    if installed != expected:
+        raise RuntimeError(
+            f"Outlines {expected} is required for this backend, "
+            f"but version {installed} is installed. "
+            f"Use `uv sync --group {group}` in a clean environment."
+        )
+
+
+class OutlinesRegexBatchGenerator:
+    """Adapter matching the internal generator's generate_batch interface."""
+
+    def __init__(self, generator, **generation_defaults):
+        self.generator = generator
+        self.generation_defaults = generation_defaults
+
+    def generate_batch(self, prompt: str, n: int, max_tokens: int) -> list[str]:
+        gen_kwargs = {
+            **self.generation_defaults,
+            "max_new_tokens": max_tokens,
+        }
+        return [self.generator(prompt, **gen_kwargs) for _ in range(n)]
+
+
+def make_outlines_regex_generator(
+    model,
+    tokenizer,
+    regex: str,
+    **generation_kwargs,
+) -> OutlinesRegexBatchGenerator:
+    require_outlines_version(expected="1.2.12", group="outlines")
+    try:
+        import outlines
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Outlines 1.2.12 baseline requires the optional dependency group. "
+            "Install it with `uv sync --group outlines`."
+        ) from exc
+
+    outlines_model = outlines.from_transformers(model, tokenizer)
+    generator = outlines.Generator(outlines_model, outlines.regex(regex))
+    return OutlinesRegexBatchGenerator(generator, **generation_kwargs)
 
 
 def parse_args():
@@ -146,6 +203,16 @@ def parse_args():
     )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
     parser.add_argument(
+        "--baseline-backend",
+        choices=["internal", "outlines"],
+        default="internal",
+        help=(
+            "Baseline implementation to use with --baseline. "
+            "'internal' disables diversity in this project's guide; "
+            "'outlines' uses Outlines 1.2.12 as an external regex baseline."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -165,7 +232,10 @@ def parse_args():
         choices=["reward", "penalty", "range_scaling"],
         help="Component to ablate (for ablation studies).",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.baseline_backend == "outlines" and not args.baseline:
+        parser.error("--baseline-backend outlines requires --baseline")
+    return args
 
 
 def main():
@@ -210,7 +280,17 @@ def main():
         generation_kwargs["temperature"] = args.temperature
 
     if args.baseline:
-        generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
+        if args.baseline_backend == "outlines":
+            print("Baseline backend: outlines==1.2.12")
+            outlines_generation_kwargs = {**generation_kwargs, "do_sample": True}
+            if getattr(tokenizer, "pad_token_id", None) is None:
+                outlines_generation_kwargs["pad_token_id"] = tokenizer.eos_token_id
+            generator = make_outlines_regex_generator(
+                model, tokenizer, regex, **outlines_generation_kwargs
+            )
+        else:
+            print("Baseline backend: internal mask-only")
+            generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
     else:
         generator = DiverseGuide(
             model,
@@ -230,6 +310,7 @@ def main():
         args.top_p,
         args.temperature,
         args.seed,
+        args.baseline_backend if args.baseline else "internal",
         [],
         0.0,
         0,

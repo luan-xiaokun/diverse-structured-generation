@@ -10,6 +10,7 @@ from typing import Any
 METRIC_FIELDS = [
     "experiment",
     "setting",
+    "baseline_backend",
     "grammar",
     "model",
     "sample_count",
@@ -87,6 +88,7 @@ def metric_row(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "experiment": data["experiment"],
         "setting": data["setting"],
+        "baseline_backend": parameters.get("baseline_backend", "internal"),
         "grammar": data["grammar"],
         "model": data["model"],
         "sample_count": data["sample_count"],

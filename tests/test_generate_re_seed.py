@@ -2,6 +2,8 @@ import json
 import sys
 from unittest.mock import Mock
 
+import pytest
+
 import scripts.generate_re as generate_re
 from scripts.generate_re import GeneratedData, set_generation_seed
 
@@ -17,6 +19,7 @@ def test_generated_data_round_trips_seed():
         top_p=None,
         temperature=None,
         seed=42,
+        baseline_backend="internal",
         samples=["#aabbcc"],
         elapsed_seconds=12.5,
         attempted_batches=3,
@@ -28,8 +31,10 @@ def test_generated_data_round_trips_seed():
     restored = GeneratedData.from_dict(payload)
 
     assert payload["seed"] == 42
+    assert payload["baseline_backend"] == "internal"
     assert payload["elapsed_seconds"] == 12.5
     assert restored.seed == 42
+    assert restored.baseline_backend == "internal"
     assert restored.attempted_batches == 3
     assert restored.accepted_samples == 1
     assert restored.rejected_samples == 2
@@ -51,6 +56,7 @@ def test_generated_data_accepts_legacy_payload_without_seed():
     )
 
     assert restored.seed is None
+    assert restored.baseline_backend == "internal"
     assert restored.elapsed_seconds is None
     assert restored.accepted_samples is None
 
@@ -104,6 +110,17 @@ def test_parse_args_accepts_local_files_only(monkeypatch):
     args = generate_re.parse_args()
 
     assert args.local_files_only is True
+
+
+def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--baseline-backend", "outlines"],
+    )
+
+    with pytest.raises(SystemExit):
+        generate_re.parse_args()
 
 
 def test_main_forwards_local_files_only_and_records_generation_metrics(

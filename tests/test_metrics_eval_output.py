@@ -22,6 +22,7 @@ def _args(**overrides):
         "top_p": None,
         "temperature": None,
         "baseline": False,
+        "baseline_backend": "internal",
         "d": 2,
         "s": 1,
         "n": None,
@@ -88,6 +89,7 @@ def test_build_metrics_result_includes_reproduction_context(dfa_single, tmp_path
     assert result["model"] == "test/model"
     assert result["input_path"] == str(input_path)
     assert result["parameters"]["temperature"] == 1.5
+    assert result["parameters"]["baseline_backend"] == "internal"
     assert result["metadata"]["timestamp_utc"] == "2026-04-27T00:00:00Z"
 
 
@@ -110,6 +112,7 @@ def test_build_metrics_result_uses_diverse_setting_and_parameter_schema(
         "temperature",
         "top_k",
         "top_p",
+        "baseline_backend",
         "ablation_component",
         "ppl",
         "ppl_model",
