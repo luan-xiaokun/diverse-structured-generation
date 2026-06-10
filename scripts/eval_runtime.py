@@ -97,6 +97,7 @@ def build_runtime_result(
             "top_k": args.top_k,
             "top_p": args.top_p,
             "completion_bias_eta": args.completion_bias_eta,
+            "path_frequency_estimator": args.path_frequency_estimator,
             "baseline_backend": getattr(args, "baseline_backend", "internal"),
             "seed": args.seed,
         },
@@ -148,8 +149,14 @@ def parse_args():
     parser.add_argument(
         "--completion-bias-eta",
         type=float,
-        default=0.0,
+        default=0.15,
         help="Small completion-proximity bias weight. Use 0.0 to disable.",
+    )
+    parser.add_argument(
+        "--path-frequency-estimator",
+        choices=["min", "harmonic"],
+        default="harmonic",
+        help="Token-path frequency estimator used in the diversity reward.",
     )
     parser.add_argument(
         "--seed",
@@ -237,6 +244,7 @@ def main():
             tokenizer,
             regex,
             completion_bias_eta=args.completion_bias_eta,
+            path_frequency_estimator=args.path_frequency_estimator,
             **generation_kwargs,
         )
 

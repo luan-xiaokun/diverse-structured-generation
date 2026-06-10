@@ -155,6 +155,7 @@ def build_metrics_result(
             "temperature": args.temperature,
             "top_k": args.top_k,
             "top_p": args.top_p,
+            "path_frequency_estimator": args.path_frequency_estimator,
             "ablation_component": args.ablation_component,
             "ppl": args.ppl,
             "ppl_model": args.ppl_model,
@@ -209,6 +210,12 @@ def parse_args():
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--temperature", type=float, default=None)
+    parser.add_argument(
+        "--path-frequency-estimator",
+        choices=["min", "harmonic"],
+        default="harmonic",
+        help="Token-path frequency estimator used to locate the generated data.",
+    )
     parser.add_argument("--baseline", "-b", action="store_true", help="Use baseline")
     parser.add_argument(
         "-d", type=int, default=5, help="Max k-mer degree for Vendi score"

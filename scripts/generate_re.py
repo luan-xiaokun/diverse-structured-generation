@@ -44,6 +44,7 @@ class GeneratedData:
     temperature: float | None
     seed: int | None
     completion_bias_eta: float
+    path_frequency_estimator: str
     samples: list[str]
     elapsed_seconds: float | None = None
     attempted_batches: int | None = None
@@ -62,6 +63,7 @@ class GeneratedData:
             "temperature": self.temperature,
             "seed": self.seed,
             "completion_bias_eta": self.completion_bias_eta,
+            "path_frequency_estimator": self.path_frequency_estimator,
             "samples": self.samples,
             "elapsed_seconds": self.elapsed_seconds,
             "attempted_batches": self.attempted_batches,
@@ -81,7 +83,8 @@ class GeneratedData:
             top_p=data["top_p"],
             temperature=data["temperature"],
             seed=data.get("seed"),
-            completion_bias_eta=data.get("completion_bias_eta", 0.0),
+            completion_bias_eta=data.get("completion_bias_eta", 0.15),
+            path_frequency_estimator=data.get("path_frequency_estimator", "harmonic"),
             samples=data["samples"],
             elapsed_seconds=data.get("elapsed_seconds"),
             attempted_batches=data.get("attempted_batches"),
@@ -139,8 +142,14 @@ def parse_args():
     parser.add_argument(
         "--completion-bias-eta",
         type=float,
-        default=0.0,
+        default=0.15,
         help="Small completion-proximity bias weight. Use 0.0 to disable.",
+    )
+    parser.add_argument(
+        "--path-frequency-estimator",
+        choices=["min", "harmonic"],
+        default="harmonic",
+        help="Token-path frequency estimator used in the diversity reward.",
     )
     parser.add_argument(
         "--seed",
@@ -228,6 +237,7 @@ def main():
             tokenizer,
             regex,
             completion_bias_eta=args.completion_bias_eta,
+            path_frequency_estimator=args.path_frequency_estimator,
             ablation_component=args.ablation_component,
             **generation_kwargs,
         )
@@ -243,6 +253,7 @@ def main():
         args.temperature,
         args.seed,
         args.completion_bias_eta,
+        args.path_frequency_estimator,
         [],
         0.0,
         0,

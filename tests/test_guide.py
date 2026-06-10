@@ -207,7 +207,7 @@ def test_terminal_sentinel_keeps_only_eos(mock_tokenizer):
 def test_gamma_zero_no_adjustment(mock_tokenizer):
     """With gamma=0, logit adjustment is zero; only masking applies."""
     # compute_counts starts penalty at 1 (prevents div-by-zero)
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer, gamma=0.0)
 
     scores = torch.tensor([[1.0] * 100])
     input_ids = _make_input_ids()
@@ -312,6 +312,14 @@ def test_distance_to_accepting_terminal_state_is_zero(mock_tokenizer):
 def test_completion_bias_eta_validation(processor_cls, mock_tokenizer):
     with pytest.raises(ValueError):
         processor_cls("[ab]", mock_tokenizer, completion_bias_eta=-0.1)
+
+
+@pytest.mark.parametrize(
+    "processor_cls", [gr.DiverseRegexLogitsProcessor, gp.DiverseRegexLogitsProcessor]
+)
+def test_path_frequency_estimator_validation(processor_cls, mock_tokenizer):
+    with pytest.raises(ValueError):
+        processor_cls("[ab]", mock_tokenizer, path_frequency_estimator="bogus")
 
 
 def test_mask_only_does_not_update_diversity_counters(mock_tokenizer):
@@ -429,7 +437,7 @@ def test_generate_batch_returns_n_results(mock_tokenizer):
     """generate_batch returns a list of exactly n strings."""
     n = 4
     tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     results = adapter.generate_batch("prompt", n=n, max_tokens=3)
@@ -445,7 +453,7 @@ def test_generate_batch_all_match_regex(mock_tokenizer):
 
     n = 3
     tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]+", tok, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]+", tok, gamma=0.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     results = adapter.generate_batch("prompt", n=n, max_tokens=3)
@@ -459,7 +467,7 @@ def test_generate_batch_updates_path_counter(mock_tokenizer):
     """After generate_batch, the global path counter reflects all n sequences."""
     n = 3
     tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     # Record initial reward counts (all zero before any generation)
@@ -478,7 +486,7 @@ def test_generate_batch_resets_local_counter(mock_tokenizer):
     """generate_batch resets local_state_counter before each call."""
     n = 2
     tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     # Artificially inflate local counter
@@ -505,7 +513,7 @@ def test_generate_batch_resets_guide_states(mock_tokenizer):
     """generate_batch calls reset() which clears stale row-state cache."""
     n = 2
     tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
 
     # Pollute state
@@ -650,7 +658,7 @@ def test_python_adapter_and_factory_coverage():
     tok = _CoverageTokenizer(pad_token_id=None)
     model = _CoverageModel()
     proc = gp.DiverseRegexLogitsProcessor(
-        "[ab]", tok, gamma=0.5, beta=3.0, completion_bias_eta=0.2
+        "[ab]", tok, gamma=0.5, completion_bias_eta=0.2
     )
     adapter = gp.StatefulSequenceGeneratorAdapter(model, tok, proc)
     assert adapter.generation_defaults["pad_token_id"] == tok.eos_token_id
@@ -663,6 +671,7 @@ def test_python_adapter_and_factory_coverage():
     assert isinstance(d, gp.DiverseGuide)
     assert proc.completion_bias_eta == 0.2
     assert d.completion_bias_eta == 0.2
+    assert d.path_frequency_estimator == "harmonic"
     assert b.logits_processor.gamma == 0.0
 
 
@@ -682,7 +691,6 @@ def test_rust_get_next_instruction_none_and_ablation_branches():
         "[ab]",
         tok,
         gamma=0.5,
-        beta=3.0,
         no_reward=True,
         no_penalty=True,
         no_range_scaling=True,
@@ -702,14 +710,14 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     baseline = gr.baseline_regex(model, tok, "[ab]")
     assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
     guide = gr.DiverseGuide(
-        model, tok, "[ab]", gamma=0.5, beta=3.0, completion_bias_eta=0.2
+        model, tok, "[ab]", gamma=0.5, completion_bias_eta=0.2
     )
     assert isinstance(guide, gr.StatefulSequenceGeneratorAdapter)
     assert isinstance(guide.logits_processor, gr.DiverseRegexLogitsProcessor)
     assert guide.regex_str == "[ab]"
     assert guide.gamma == 0.5
-    assert guide.beta == 3.0
     assert guide.completion_bias_eta == 0.2
+    assert guide.path_frequency_estimator == "harmonic"
 
     a1 = gr.diverse_regex(model, tok, "[ab]", ablation_component="reward")
     a2 = gr.diverse_regex(model, tok, "[ab]", ablation_component="penalty")

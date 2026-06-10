@@ -14,10 +14,10 @@ The diversity adjustment formula is identical to the Rust implementation:
     \\Delta_i = \\gamma \\cdot \\text{logits\\_range}
                 \\cdot \\frac{\\log(1 + \\sum_j c^{\\text{trans}}_j)}
                              {1 + c^{\\text{trans}}_i}
-                \\cdot \\frac{1}{\\beta \\cdot (c^{\\text{local}}_i)^2}
+                \\cdot \\frac{1}{(c^{\\text{local}}_i)^2}
 
-where :math:`c^{\\text{trans}}_i` is the minimum byte-transition visit count
-along token *i*'s path (global, cross-sequence reward signal) and
+where :math:`c^{\\text{trans}}_i` is the selected path-frequency estimate along
+token *i*'s path (global, cross-sequence reward signal) and
 :math:`c^{\\text{local}}_i` is the maximum byte-state visit count along the
 path within the current generation call (per-call penalty, lower-bounded at 1).
 """
@@ -115,9 +115,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self,
         regex_string: str,
         tokenizer: PreTrainedTokenizerBase,
-        gamma: float = 0.5,
-        beta: float = 3.0,
-        completion_bias_eta: float = 0.0,
+        gamma: float = 0.15,
+        completion_bias_eta: float = 0.15,
+        path_frequency_estimator: str = "harmonic",
     ):
         self.guide = DiverseRegexGuide(regex_string, tokenizer)
         self.state_counter: Counter = Counter()
@@ -126,9 +126,11 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self.local_transition_counter: Counter = Counter()
         if completion_bias_eta < 0.0:
             raise ValueError("completion_bias_eta must be non-negative")
+        if path_frequency_estimator not in {"min", "harmonic"}:
+            raise ValueError("path_frequency_estimator must be 'min' or 'harmonic'")
         self.gamma = gamma
-        self.beta = beta
         self.completion_bias_eta = completion_bias_eta
+        self.path_frequency_estimator = path_frequency_estimator
         self._guide_states: dict[tuple[int, ...], int] = {(): self.guide.initial_state}
         self._seq_start_idx: int | None = None
 
@@ -138,6 +140,21 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self._guide_states = {(): self.guide.initial_state}
         self.local_state_counter = Counter()
         self.local_transition_counter = Counter()
+
+    @staticmethod
+    def _shifted_harmonic_mean(counts: list[int]) -> float:
+        if not counts:
+            return 0.0
+        reciprocal_sum = sum(1.0 / (count + 1.0) for count in counts)
+        return (len(counts) / reciprocal_sum) - 1.0
+
+    @classmethod
+    def _estimate_path_frequency(cls, counts: list[int], estimator: str) -> float:
+        if not counts:
+            return 0.0
+        if estimator == "min":
+            return float(min(counts))
+        return cls._shifted_harmonic_mean(counts)
 
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
@@ -198,9 +215,14 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                 next_state = state_seq[-1] if state_seq else guide_state
                 transitions = list(zip(state_seq, state_seq[1:]))
                 if transitions:
-                    counts.append(min(self.transition_counter[t] for t in transitions))
+                    counts.append(
+                        self._estimate_path_frequency(
+                            [self.transition_counter[t] for t in transitions],
+                            self.path_frequency_estimator,
+                        )
+                    )
                 else:
-                    counts.append(0)
+                    counts.append(0.0)
                 local_count = max(
                     (self.local_state_counter[s] for s in state_seq[1:]), default=0
                 )
@@ -217,7 +239,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             counts_t = torch.tensor(counts, dtype=torch.float)
             reward = torch.log(1 + counts_t.sum()) / (1 + counts_t)
             local_counts_t = torch.tensor(local_counts, dtype=torch.float)
-            penalty = self.beta * local_counts_t**2
+            penalty = local_counts_t**2
             adjusts.append(
                 (reward / penalty)
                 + torch.tensor(completion_bonuses, dtype=torch.float)
@@ -242,6 +264,15 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         scores.add_(adjust_tensor)
 
         return scores
+
+    def update_generated_content(self, generated_content: str) -> None:
+        """Update cross-call counters from a completed generated string."""
+        states = list(self.guide.dfa.get_state_sequence(generated_content))
+        transitions = list(zip(states, states[1:]))
+        for state in states:
+            self.state_counter[state] += 1
+        for transition in transitions:
+            self.transition_counter[transition] += 1
 
 
 class StatefulSequenceGeneratorAdapter:
@@ -311,32 +342,32 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         model: PreTrainedModel,
         tokenizer: PreTrainedTokenizerBase,
         regex_str: str,
-        gamma: float = 0.5,
-        beta: float = 3.0,
-        completion_bias_eta: float = 0.0,
+        gamma: float = 0.15,
+        completion_bias_eta: float = 0.15,
+        path_frequency_estimator: str = "harmonic",
         **generation_kwargs,
     ):
         logits_processor = DiverseRegexLogitsProcessor(
             regex_str,
             tokenizer,
             gamma=gamma,
-            beta=beta,
             completion_bias_eta=completion_bias_eta,
+            path_frequency_estimator=path_frequency_estimator,
         )
         super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
         self.regex_str = regex_str
         self.gamma = gamma
-        self.beta = beta
         self.completion_bias_eta = completion_bias_eta
+        self.path_frequency_estimator = path_frequency_estimator
 
 
 def diverse_regex(
     model: PreTrainedModel,
     tokenizer: PreTrainedTokenizerBase,
     regex_str: str,
-    gamma: float = 0.5,
-    beta: float = 3.0,
-    completion_bias_eta: float = 0.0,
+    gamma: float = 0.15,
+    completion_bias_eta: float = 0.15,
+    path_frequency_estimator: str = "harmonic",
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator (pure Python reference).
@@ -348,8 +379,8 @@ def diverse_regex(
         tokenizer,
         regex_str,
         gamma=gamma,
-        beta=beta,
         completion_bias_eta=completion_bias_eta,
+        path_frequency_estimator=path_frequency_estimator,
         **generation_kwargs,
     )
 
@@ -361,6 +392,4 @@ def baseline_regex(
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a baseline (non-diverse) regex-constrained generator using gamma=0."""
-    return diverse_regex(
-        model, tokenizer, regex_str, gamma=0.0, beta=1.0, **generation_kwargs
-    )
+    return diverse_regex(model, tokenizer, regex_str, gamma=0.0, **generation_kwargs)

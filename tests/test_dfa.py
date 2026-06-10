@@ -5,6 +5,7 @@ import pickle
 import pytest
 import torch
 
+from diverse_guide.guide_python import DiverseRegexLogitsProcessor
 from regex_dfa_guide import DiverseGuideDFA
 
 # ---------------------------------------------------------------------------
@@ -195,22 +196,34 @@ def test_update_and_reset_local_state_counter(dfa_multi):
     assert all(c == 1 for c in penalty_counts_after)
 
 
+def _shifted_harmonic_mean(counts: list[int]) -> float:
+    if not counts:
+        return 0.0
+    reciprocal_sum = sum(1.0 / (count + 1.0) for count in counts)
+    return (len(counts) / reciprocal_sum) - 1.0
+
+
 def _expected_adjustments_from_counts(
-    reward_counts: list[int],
+    reward_counts: list[float],
     penalty_counts: list[int],
-    beta: float,
     no_reward: bool = False,
     no_penalty: bool = False,
 ) -> torch.Tensor:
     reward_tensor = torch.tensor(reward_counts, dtype=torch.float)
     penalty_tensor = torch.tensor(penalty_counts, dtype=torch.float)
     reward = torch.log(1 + reward_tensor.sum()) / (1 + reward_tensor)
-    penalty = beta * penalty_tensor**2
+    penalty = penalty_tensor**2
     if no_reward:
         reward = torch.ones_like(reward_tensor)
     if no_penalty:
         penalty = torch.ones_like(penalty_tensor)
     return reward / penalty
+
+
+def test_shifted_harmonic_mean_helper_matches_formula():
+    assert DiverseRegexLogitsProcessor._shifted_harmonic_mean([2, 1]) == pytest.approx(
+        _shifted_harmonic_mean([2, 1])
+    )
 
 
 def test_compute_adjustments_matches_python_formula(dfa_multi):
@@ -221,12 +234,12 @@ def test_compute_adjustments_matches_python_formula(dfa_multi):
 
     token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
     adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
-        initial, 3.0, False, False, 0.0
+        initial, 1.0, False, False, 0.0
     )
 
     assert adjustment_token_ids == token_ids
     expected = _expected_adjustments_from_counts(
-        list(reward_counts), list(penalty_counts), beta=3.0
+        list(reward_counts), list(penalty_counts)
     )
     actual = torch.tensor(adjustments, dtype=torch.float)
     torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
@@ -246,14 +259,13 @@ def test_compute_adjustments_ablation_flags_match_python_formula(
 
     token_ids, reward_counts, penalty_counts = dfa_multi.compute_counts(initial)
     adjustment_token_ids, adjustments = dfa_multi.compute_adjustments(
-        initial, 3.0, no_reward, no_penalty, 0.0
+        initial, 1.0, no_reward, no_penalty, 0.0
     )
 
     assert adjustment_token_ids == token_ids
     expected = _expected_adjustments_from_counts(
         list(reward_counts),
         list(penalty_counts),
-        beta=3.0,
         no_reward=no_reward,
         no_penalty=no_penalty,
     )
@@ -263,7 +275,7 @@ def test_compute_adjustments_ablation_flags_match_python_formula(
 
 def test_compute_adjustments_invalid_state_raises_value_error(dfa_multi):
     with pytest.raises(ValueError):
-        dfa_multi.compute_adjustments(2**32 - 1, 3.0, False, False, 0.0)
+        dfa_multi.compute_adjustments(2**32 - 1, 1.0, False, False, 0.0)
 
 
 def test_compute_adjustments_completion_bias_bonus():

@@ -6,8 +6,11 @@ from pathlib import Path
 def get_data_dir_path(args) -> Path:
     segments = [args.model.split("/")[-1].lower()]
     ablation_component = getattr(args, "ablation_component", None)
+    path_frequency_estimator = getattr(args, "path_frequency_estimator", "harmonic")
     if not args.baseline and ablation_component is not None:
         segments.append(f"no_{ablation_component}")
+    if not args.baseline and path_frequency_estimator != "harmonic":
+        segments.append(f"path_freq_{path_frequency_estimator}")
     if args.top_k is not None:
         segments.append(f"top_k_{args.top_k}")
     if args.top_p is not None:

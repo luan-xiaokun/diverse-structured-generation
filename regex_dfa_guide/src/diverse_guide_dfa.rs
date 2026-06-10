@@ -17,6 +17,54 @@ pub type StateId = u32;
 pub type TokenId = u64;
 pub type Byte = u8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathFrequencyEstimator {
+    Min,
+    Harmonic,
+}
+
+impl PathFrequencyEstimator {
+    fn estimate(self, path_counter: &[u32], edge_indices: &[usize]) -> f32 {
+        match self {
+            Self::Min => {
+                if edge_indices.is_empty() {
+                    0.0
+                } else {
+                    edge_indices
+                        .iter()
+                        .map(|&edge_idx| path_counter[edge_idx])
+                        .min()
+                        .unwrap_or(0) as f32
+                }
+            }
+            Self::Harmonic => {
+                if edge_indices.is_empty() {
+                    return 0.0;
+                }
+
+                let k = edge_indices.len() as f32;
+                let reciprocal_sum: f32 = edge_indices
+                    .iter()
+                    .map(|&edge_idx| 1.0 / (path_counter[edge_idx] as f32 + 1.0))
+                    .sum();
+                (k / reciprocal_sum) - 1.0
+            }
+        }
+    }
+}
+
+impl TryFrom<&str> for PathFrequencyEstimator {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+        match value {
+            "min" => Ok(Self::Min),
+            "harmonic" => Ok(Self::Harmonic),
+            _ => Err("path_frequency_estimator must be 'min' or 'harmonic'"),
+        }
+    }
+}
+
 /// Precomputed metadata for one token transition from a DFA state.
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 struct AllowedTokenInfo {
@@ -522,9 +570,8 @@ impl DfaIndex {
 pub struct TokenCounts {
     /// Token IDs allowed from the queried state.
     pub token_ids: Vec<TokenId>,
-    /// Minimum path-counter value along each token's byte-state path (global reward signal).
-    /// Initialized to `u32::MAX` and saturated to 0 for tokens with no path history.
-    pub reward_counts: Vec<u32>,
+    /// Path frequency estimate along each token's byte-state path (global reward signal).
+    pub reward_counts: Vec<f32>,
     /// Maximum local-state-counter value along each token's byte-state path (penalty signal).
     /// Baseline is 1 (not 0) to prevent division-by-zero in the logit adjustment formula.
     pub penalty_counts: Vec<u32>,
@@ -717,7 +764,11 @@ impl DiverseGuideDFA {
         self.local_state_counter.fill(0);
     }
 
-    pub fn compute_counts(&self, state: StateId) -> Result<TokenCounts> {
+    pub fn compute_counts(
+        &self,
+        state: StateId,
+        estimator: PathFrequencyEstimator,
+    ) -> Result<TokenCounts> {
         let infos = self.index.get_allowed_token_infos(state)?;
         let mut token_ids = Vec::with_capacity(infos.len());
         let mut reward_counts = Vec::with_capacity(infos.len());
@@ -725,11 +776,7 @@ impl DiverseGuideDFA {
 
         for info in infos {
             token_ids.push(info.token_id);
-            let mut minimal_path_count = u32::MAX;
-            for &edge_idx in &info.edge_indices {
-                minimal_path_count = minimal_path_count.min(self.path_counter[edge_idx]);
-            }
-            reward_counts.push(minimal_path_count);
+            reward_counts.push(estimator.estimate(&self.path_counter, &info.edge_indices));
             let mut maximal_local_state_count: u32 = 1;
             for &state_idx in &info.state_indices {
                 maximal_local_state_count =
@@ -748,14 +795,14 @@ impl DiverseGuideDFA {
     pub fn compute_adjustments(
         &self,
         state: StateId,
-        beta: f32,
         no_reward: bool,
         no_penalty: bool,
         completion_bias_eta: f32,
+        estimator: PathFrequencyEstimator,
     ) -> Result<TokenAdjustments> {
-        let counts = self.compute_counts(state)?;
+        let counts = self.compute_counts(state, estimator)?;
         let current_distance = self.index.get_distance_to_accepting(state)? as f32;
-        let reward_sum: f32 = counts.reward_counts.iter().map(|&count| count as f32).sum();
+        let reward_sum: f32 = counts.reward_counts.iter().sum();
         let reward_numerator = (1.0 + reward_sum).ln();
         let mut adjustments = Vec::with_capacity(counts.token_ids.len());
 
@@ -768,12 +815,12 @@ impl DiverseGuideDFA {
             let reward = if no_reward {
                 1.0
             } else {
-                reward_numerator / (1.0 + reward_count as f32)
+                reward_numerator / (1.0 + reward_count)
             };
             let penalty = if no_penalty {
                 1.0
             } else {
-                beta * (penalty_count as f32).powi(2)
+                (penalty_count as f32).powi(2)
             };
             let base_adjustment = reward / penalty;
             let completion_bonus = if completion_bias_eta > 0.0 {
@@ -810,7 +857,7 @@ mod tests {
     use bincode::config;
     use rustc_hash::FxHashMap as Map;
 
-    use super::{DiverseGuideDFA, Error, TokenId};
+    use super::{DiverseGuideDFA, Error, PathFrequencyEstimator, TokenId};
 
     fn toy_vocab(eos: TokenId) -> Map<TokenId, String> {
         let mut vocab = Map::default();
@@ -827,9 +874,9 @@ mod tests {
         DiverseGuideDFA::new("ab", eos, toy_vocab(eos)).expect("toy DFA should build")
     }
 
-    fn counts_by_token(dfa: &DiverseGuideDFA, state: u32) -> Map<TokenId, (u32, u32)> {
+    fn counts_by_token(dfa: &DiverseGuideDFA, state: u32) -> Map<TokenId, (f32, u32)> {
         let counts = dfa
-            .compute_counts(state)
+            .compute_counts(state, PathFrequencyEstimator::Harmonic)
             .expect("compute_counts should succeed");
         let mut out = Map::default();
         for i in 0..counts.token_ids.len() {
@@ -842,7 +889,7 @@ mod tests {
     }
 
     fn token_ids_from_counts(dfa: &DiverseGuideDFA, state: u32) -> Vec<TokenId> {
-        dfa.compute_counts(state)
+        dfa.compute_counts(state, PathFrequencyEstimator::Harmonic)
             .expect("compute_counts should succeed")
             .token_ids
     }
@@ -854,23 +901,33 @@ mod tests {
         );
     }
 
+    fn assert_count_entry(
+        counts: &Map<TokenId, (f32, u32)>,
+        token_id: TokenId,
+        expected_reward: f32,
+        expected_penalty: u32,
+    ) {
+        let (reward, penalty) = counts.get(&token_id).expect("token entry must exist");
+        assert_close(*reward, expected_reward);
+        assert_eq!(*penalty, expected_penalty);
+    }
+
     fn expected_adjustment(
-        reward_sum: u32,
-        reward_count: u32,
+        reward_sum: f32,
+        reward_count: f32,
         penalty_count: u32,
-        beta: f32,
         no_reward: bool,
         no_penalty: bool,
     ) -> f32 {
         let reward = if no_reward {
             1.0
         } else {
-            (1.0 + reward_sum as f32).ln() / (1.0 + reward_count as f32)
+            (1.0 + reward_sum).ln() / (1.0 + reward_count)
         };
         let penalty = if no_penalty {
             1.0
         } else {
-            beta * (penalty_count as f32).powi(2)
+            (penalty_count as f32).powi(2)
         };
         reward / penalty
     }
@@ -957,8 +1014,8 @@ mod tests {
 
         let before = counts_by_token(&dfa, initial);
         // Default: no path history -> reward 0, no local history -> penalty 1.
-        assert_eq!(before.get(&1), Some(&(0, 1)));
-        assert_eq!(before.get(&3), Some(&(0, 1)));
+        assert_count_entry(&before, 1, 0.0, 1);
+        assert_count_entry(&before, 3, 0.0, 1);
 
         dfa.update_path_counter("ab")
             .expect("path counter update should succeed");
@@ -968,14 +1025,35 @@ mod tests {
             .expect("second local counter update should succeed");
 
         let after = counts_by_token(&dfa, initial);
-        assert_eq!(after.get(&1), Some(&(1, 2)));
-        assert_eq!(after.get(&3), Some(&(1, 2)));
+        assert_count_entry(&after, 1, 1.0, 2);
+        assert_count_entry(&after, 3, 1.0, 2);
 
         dfa.reset_path_counter();
         dfa.reset_local_state_counter();
         let reset = counts_by_token(&dfa, initial);
-        assert_eq!(reset.get(&1), Some(&(0, 1)));
-        assert_eq!(reset.get(&3), Some(&(0, 1)));
+        assert_count_entry(&reset, 1, 0.0, 1);
+        assert_count_entry(&reset, 3, 0.0, 1);
+    }
+
+    #[test]
+    fn compute_counts_uses_shifted_harmonic_mean_for_multi_edge_token() {
+        let mut vocab = Map::default();
+        vocab.insert(99, "<eos>".to_string());
+        vocab.insert(1, "a".to_string());
+        vocab.insert(2, "b".to_string());
+        vocab.insert(3, "ab".to_string());
+        let mut dfa =
+            DiverseGuideDFA::new("(?:[ab]+)$", 99, vocab).expect("dfa must build");
+        let initial = dfa.get_initial_state();
+
+        dfa.update_path_counter("ab")
+            .expect("path counter update should succeed");
+        dfa.update_path_counter("a")
+            .expect("prefix path counter update should succeed");
+
+        let counts = counts_by_token(&dfa, initial);
+        assert_count_entry(&counts, 1, 2.0, 1);
+        assert_count_entry(&counts, 3, 1.4, 1);
     }
 
     #[test]
@@ -983,10 +1061,16 @@ mod tests {
         let dfa = toy_dfa();
         let initial = dfa.get_initial_state();
         let counts = dfa
-            .compute_counts(initial)
+            .compute_counts(initial, PathFrequencyEstimator::Harmonic)
             .expect("compute_counts should succeed");
         let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false, 0.0)
+            .compute_adjustments(
+                initial,
+                false,
+                false,
+                0.0,
+                PathFrequencyEstimator::Harmonic,
+            )
             .expect("compute_adjustments should succeed");
 
         assert_eq!(adjustments.token_ids, counts.token_ids);
@@ -1008,12 +1092,18 @@ mod tests {
             .expect("second local counter update should succeed");
 
         let counts = dfa
-            .compute_counts(initial)
+            .compute_counts(initial, PathFrequencyEstimator::Harmonic)
             .expect("compute_counts should succeed");
         let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false, 0.0)
+            .compute_adjustments(
+                initial,
+                false,
+                false,
+                0.0,
+                PathFrequencyEstimator::Harmonic,
+            )
             .expect("compute_adjustments should succeed");
-        let reward_sum: u32 = counts.reward_counts.iter().sum();
+        let reward_sum: f32 = counts.reward_counts.iter().sum();
 
         assert_eq!(adjustments.token_ids, counts.token_ids);
         for ((&reward_count, &penalty_count), &adjustment) in counts
@@ -1024,7 +1114,13 @@ mod tests {
         {
             assert_close(
                 adjustment,
-                expected_adjustment(reward_sum, reward_count, penalty_count, 3.0, false, false),
+                expected_adjustment(
+                    reward_sum,
+                    reward_count,
+                    penalty_count,
+                    false,
+                    false,
+                ),
             );
         }
     }
@@ -1041,12 +1137,18 @@ mod tests {
             .expect("second local counter update should succeed");
 
         let counts = dfa
-            .compute_counts(initial)
+            .compute_counts(initial, PathFrequencyEstimator::Harmonic)
             .expect("compute_counts should succeed");
-        let reward_sum: u32 = counts.reward_counts.iter().sum();
+        let reward_sum: f32 = counts.reward_counts.iter().sum();
         for (no_reward, no_penalty) in [(true, false), (false, true), (true, true)] {
             let adjustments = dfa
-                .compute_adjustments(initial, 3.0, no_reward, no_penalty, 0.0)
+                .compute_adjustments(
+                    initial,
+                    no_reward,
+                    no_penalty,
+                    0.0,
+                    PathFrequencyEstimator::Harmonic,
+                )
                 .expect("compute_adjustments should succeed");
             assert_eq!(adjustments.token_ids, counts.token_ids);
             for ((&reward_count, &penalty_count), &adjustment) in counts
@@ -1061,7 +1163,6 @@ mod tests {
                         reward_sum,
                         reward_count,
                         penalty_count,
-                        3.0,
                         no_reward,
                         no_penalty,
                     ),
@@ -1084,8 +1185,8 @@ mod tests {
         let forked = dfa.fork();
         let original_counts = counts_by_token(&dfa, initial);
         let forked_counts = counts_by_token(&forked, initial);
-        assert_eq!(original_counts.get(&3), Some(&(1, 2)));
-        assert_eq!(forked_counts.get(&3), Some(&(0, 1)));
+        assert_count_entry(&original_counts, 3, 1.0, 2);
+        assert_count_entry(&forked_counts, 3, 0.0, 1);
     }
 
     #[test]
@@ -1289,12 +1390,18 @@ mod tests {
         assert!(matches!(invalid_path_err, Error::NoTransitionFound(_, _)));
 
         let invalid_state_err = dfa
-            .compute_counts(u32::MAX)
+            .compute_counts(u32::MAX, PathFrequencyEstimator::Harmonic)
             .expect_err("invalid state should fail");
         assert!(matches!(invalid_state_err, Error::InvalidState(_)));
 
         let invalid_adjustments_err = dfa
-            .compute_adjustments(u32::MAX, 3.0, false, false, 0.0)
+            .compute_adjustments(
+                u32::MAX,
+                false,
+                false,
+                0.0,
+                PathFrequencyEstimator::Harmonic,
+            )
             .expect_err("invalid state should fail");
         assert!(matches!(invalid_adjustments_err, Error::InvalidState(_)));
     }
@@ -1323,7 +1430,13 @@ mod tests {
         let dfa = DiverseGuideDFA::new("(?:ab)$", 999, vocab).expect("dfa must build");
         let initial = dfa.get_initial_state();
         let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false, 0.2)
+            .compute_adjustments(
+                initial,
+                false,
+                false,
+                0.2,
+                PathFrequencyEstimator::Harmonic,
+            )
             .expect("compute_adjustments should succeed");
         let by_token: Map<TokenId, f32> = adjustments
             .token_ids

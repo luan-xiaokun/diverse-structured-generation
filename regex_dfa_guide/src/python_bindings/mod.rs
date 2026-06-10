@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rustc_hash::FxHashMap as HashMap;
 
-use crate::diverse_guide_dfa::DiverseGuideDFA;
+use crate::diverse_guide_dfa::{DiverseGuideDFA, PathFrequencyEstimator};
 
 #[pyclass(
     name = "DiverseGuideDFA",
@@ -135,9 +135,25 @@ impl PyDiverseGuideDFA {
         Ok(())
     }
 
-    fn compute_counts(&self, state: u32) -> PyResult<(Vec<u64>, Vec<u32>, Vec<u32>)> {
+    fn compute_counts(&self, state: u32) -> PyResult<(Vec<u64>, Vec<f32>, Vec<u32>)> {
         let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
-        let counts = dfa_guard.compute_counts(state)?;
+        let counts = dfa_guard.compute_counts(state, PathFrequencyEstimator::Harmonic)?;
+        Ok((
+            counts.token_ids,
+            counts.reward_counts,
+            counts.penalty_counts,
+        ))
+    }
+
+    fn compute_counts_with_estimator(
+        &self,
+        state: u32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<(Vec<u64>, Vec<f32>, Vec<u32>)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        let counts = dfa_guard.compute_counts(state, estimator)?;
         Ok((
             counts.token_ids,
             counts.reward_counts,
@@ -148,7 +164,6 @@ impl PyDiverseGuideDFA {
     fn compute_adjustments(
         &self,
         state: u32,
-        beta: f32,
         no_reward: bool,
         no_penalty: bool,
         completion_bias_eta: f32,
@@ -156,10 +171,31 @@ impl PyDiverseGuideDFA {
         let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
         let adjustments = dfa_guard.compute_adjustments(
             state,
-            beta,
             no_reward,
             no_penalty,
             completion_bias_eta,
+            PathFrequencyEstimator::Harmonic,
+        )?;
+        Ok((adjustments.token_ids, adjustments.adjustments))
+    }
+
+    fn compute_adjustments_with_estimator(
+        &self,
+        state: u32,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<(Vec<u64>, Vec<f32>)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        let adjustments = dfa_guard.compute_adjustments(
+            state,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+            estimator,
         )?;
         Ok((adjustments.token_ids, adjustments.adjustments))
     }

@@ -54,7 +54,7 @@ def main() -> None:
     scores_template = torch.randn((1, len(tokenizer.get_vocab())), dtype=torch.float32)
 
     mask_only = RegexMaskLogitsProcessor(regex, tokenizer)
-    diverse = DiverseRegexLogitsProcessor(regex, tokenizer, gamma=0.5, beta=3.0)
+    diverse = DiverseRegexLogitsProcessor(regex, tokenizer, gamma=0.15)
 
     time_processor(
         "mask-only processor", mask_only, input_ids, scores_template, args.iterations

@@ -79,6 +79,10 @@ cmd = "python scripts/eval_runtime.py"
 env = { PYTHONPATH = "src:scripts" }
 help = "Run runtime evaluation"
 
+[tool.poe.tasks.eval-trend]
+cmd = "python scripts/metrics_trend.py"
+help = "Run metric trend evaluation"
+
 [tool.poe.tasks.format]
 cmd = "ruff format src tests examples scripts"
 help = "Format code with Ruff"

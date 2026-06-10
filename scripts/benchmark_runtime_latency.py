@@ -158,7 +158,6 @@ def _build_generator(
     regex: str,
     mode: str,
 ):
-    guide_rust = modules["guide_rust"]
     if mode == "baseline_mask":
         return modules["diverse_guide"].baseline_regex(model, tokenizer, regex)
     if mode == "diverse":

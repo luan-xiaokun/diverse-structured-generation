@@ -12,16 +12,16 @@ from typing import Any
 import torch
 from transformers import AutoTokenizer
 
-try:
-    from generate_re import GRAMMAR_REGEX
-except ModuleNotFoundError:
-    from scripts.generate_re import GRAMMAR_REGEX
-
 from diverse_guide.guide_rust import (
     DiverseRegexGuide,
     DiverseRegexLogitsProcessor,
     RegexMaskLogitsProcessor,
 )
+
+try:
+    from generate_re import GRAMMAR_REGEX
+except ModuleNotFoundError:
+    from scripts.generate_re import GRAMMAR_REGEX
 
 
 DEFAULT_PREFIXES = {
@@ -64,7 +64,10 @@ def _encode_text(tokenizer: Any, text: str) -> list[int]:
     encode = getattr(tokenizer, "encode", None)
     if callable(encode):
         try:
-            return [int(token_id) for token_id in encode(text, add_special_tokens=False)]
+            return [
+                int(token_id)
+                for token_id in encode(text, add_special_tokens=False)
+            ]
         except TypeError:
             return [int(token_id) for token_id in encode(text)]
 
@@ -239,7 +242,9 @@ def _profile_once(
     processor_build_seconds = perf_counter() - processor_started
 
     prefixes = args.prefixes or list(DEFAULT_PREFIXES.get(args.grammar, ("",)))
-    encoded_prefixes = [(prefix, _encode_text(tokenizer, prefix)) for prefix in prefixes]
+    encoded_prefixes = [
+        (prefix, _encode_text(tokenizer, prefix)) for prefix in prefixes
+    ]
     scores_template = torch.randn((1, _score_width(tokenizer)), dtype=torch.float32)
 
     rows = [
@@ -310,7 +315,9 @@ def _aggregate_profiles(runs: list[dict[str, Any]]) -> dict[str, Any]:
             "selected_token_id": baseline_row.get("selected_token_id"),
             "state": baseline_row.get("state"),
             "error_count": sum(
-                1 for run in runs if run["prefixes"][prefix_index].get("error") is not None
+                1
+                for run in runs
+                if run["prefixes"][prefix_index].get("error") is not None
             ),
             "metrics": {},
         }
