@@ -29,6 +29,11 @@ def test_baseline_flag():
     assert path == Path("data/baseline/qwen2.5-0.5b-instruct")
 
 
+def test_external_baseline_backend_gets_own_path_segment():
+    path = get_data_dir_path(_args(baseline=True, baseline_backend="outlines"))
+    assert path == Path("data/baseline/outlines/qwen2.5-0.5b-instruct")
+
+
 def test_top_k():
     path = get_data_dir_path(_args(top_k=50))
     assert path == Path("data/diverse/qwen2.5-0.5b-instruct-top_k_50")

@@ -5,6 +5,7 @@ from pathlib import Path
 
 def get_data_dir_path(args) -> Path:
     segments = [args.model.split("/")[-1].lower()]
+    baseline_backend = getattr(args, "baseline_backend", "internal")
     ablation_component = getattr(args, "ablation_component", None)
     path_frequency_estimator = getattr(args, "path_frequency_estimator", "harmonic")
     if not args.baseline and ablation_component is not None:
@@ -18,4 +19,6 @@ def get_data_dir_path(args) -> Path:
     if args.temperature is not None:
         segments.append(f"temperature_{args.temperature}")
     data_dir = Path("data/baseline") if args.baseline else Path("data/diverse")
+    if getattr(args, "baseline", False) and baseline_backend != "internal":
+        data_dir = data_dir / baseline_backend
     return data_dir / "-".join(segments)

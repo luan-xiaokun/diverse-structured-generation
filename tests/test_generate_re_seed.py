@@ -21,6 +21,7 @@ def test_generated_data_round_trips_seed():
         seed=42,
         completion_bias_eta=0.2,
         path_frequency_estimator="min",
+        baseline_backend="internal",
         samples=["#aabbcc"],
         elapsed_seconds=12.5,
         attempted_batches=3,
@@ -34,10 +35,12 @@ def test_generated_data_round_trips_seed():
     assert payload["seed"] == 42
     assert payload["completion_bias_eta"] == 0.2
     assert payload["path_frequency_estimator"] == "min"
+    assert payload["baseline_backend"] == "internal"
     assert payload["elapsed_seconds"] == 12.5
     assert restored.seed == 42
     assert restored.completion_bias_eta == 0.2
     assert restored.path_frequency_estimator == "min"
+    assert restored.baseline_backend == "internal"
     assert restored.attempted_batches == 3
     assert restored.accepted_samples == 1
     assert restored.rejected_samples == 2
@@ -61,6 +64,7 @@ def test_generated_data_accepts_legacy_payload_without_seed():
     assert restored.seed is None
     assert restored.completion_bias_eta == 0.15
     assert restored.path_frequency_estimator == "harmonic"
+    assert restored.baseline_backend == "internal"
     assert restored.elapsed_seconds is None
     assert restored.accepted_samples is None
 
@@ -138,6 +142,17 @@ def test_parse_args_accepts_path_frequency_estimator(monkeypatch):
     args = generate_re.parse_args()
 
     assert args.path_frequency_estimator == "min"
+
+
+def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--baseline-backend", "outlines"],
+    )
+
+    with pytest.raises(SystemExit):
+        generate_re.parse_args()
 
 
 def test_main_forwards_local_files_only_and_records_generation_metrics(
