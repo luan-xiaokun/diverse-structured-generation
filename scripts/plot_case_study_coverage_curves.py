@@ -21,6 +21,17 @@ CASE_LABELS = {
     "python_semver": "(c) python-semver",
 }
 
+MODEL_ORDER = (
+    "qwen2.5-0.5b-instruct",
+    "qwen2.5-1.5b-instruct",
+    "phi-4-mini-instruct",
+)
+MODEL_LABELS = {
+    "qwen2.5-0.5b-instruct": "Qwen2.5-0.5B",
+    "qwen2.5-1.5b-instruct": "Qwen2.5-1.5B",
+    "phi-4-mini-instruct": "Phi-4-mini",
+}
+
 METHOD_ORDER = ("baseline_outlines", "diverse_guide", "diverse_guide_plus")
 METHOD_LABELS = {
     "baseline_outlines": "Outlines",
@@ -76,6 +87,11 @@ def parse_args() -> argparse.Namespace:
         "--no-band",
         action="store_true",
         help="Disable min-max bands across models.",
+    )
+    parser.add_argument(
+        "--no-grid",
+        action="store_true",
+        help="Do not emit the 3x3 case-study-by-model grid figure.",
     )
     return parser.parse_args()
 
@@ -242,10 +258,76 @@ def plot_individual(rows: list[dict], args: argparse.Namespace) -> list[Path]:
     return outputs
 
 
+def plot_model_grid(rows: list[dict], args: argparse.Namespace) -> Path:
+    plt = configure_matplotlib()
+    budgets = sorted({row["sample_count"] for row in rows})
+    index = {
+        (row["case_study"], row["model"], row["method"], row["sample_count"]): row[
+            "percent_covered"
+        ]
+        for row in rows
+    }
+
+    fig, axes = plt.subplots(
+        len(CASE_ORDER),
+        len(MODEL_ORDER),
+        figsize=(args.width, 5.25),
+        sharex=True,
+        constrained_layout=False,
+    )
+
+    for row_index, case_study in enumerate(CASE_ORDER):
+        for col_index, model in enumerate(MODEL_ORDER):
+            axis = axes[row_index][col_index]
+            for method in METHOD_ORDER:
+                values = [
+                    index[(case_study, model, method, budget)] for budget in budgets
+                ]
+                axis.plot(
+                    budgets,
+                    values,
+                    label=METHOD_LABELS[method],
+                    color=METHOD_COLORS[method],
+                    marker=METHOD_MARKERS[method],
+                    linewidth=1.15,
+                    markersize=2.6,
+                )
+
+            axis.set_xscale("log")
+            axis.set_xticks(budgets)
+            axis.set_xticklabels([str(budget) for budget in budgets], rotation=35)
+            axis.grid(True, which="major", alpha=0.22, linewidth=0.45)
+
+            if row_index == 0:
+                axis.set_title(MODEL_LABELS[model], pad=3)
+            if col_index == 0:
+                axis.set_ylabel(f"{CASE_LABELS[case_study]}\nCoverage (%)")
+            if row_index == len(CASE_ORDER) - 1:
+                axis.set_xlabel("Samples")
+
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        ncol=3,
+        frameon=False,
+        bbox_to_anchor=(0.5, 1.02),
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.965), h_pad=0.8, w_pad=0.7)
+
+    output_path = args.output_dir / f"{args.prefix}_model_grid_acmart.pdf"
+    fig.savefig(output_path, bbox_inches="tight")
+    plt.close(fig)
+    return output_path
+
+
 def main() -> None:
     args = parse_args()
     rows = load_rows(args.input)
     outputs = [plot_combined(rows, args), *plot_individual(rows, args)]
+    if not args.no_grid:
+        outputs.append(plot_model_grid(rows, args))
     for output in outputs:
         print(output)
 
