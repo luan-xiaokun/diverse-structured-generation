@@ -48,12 +48,30 @@ function Run-TestWithCoverage {
     Remove-Item Env:TEST_DATA_FILENAME -ErrorAction SilentlyContinue
 }
 
+function Maybe-RunTestWithCoverage {
+    param(
+        [string]$Setting,
+        [string]$Grammar,
+        [string]$Source
+    )
+
+    $datasetFilename = "$Setting-$Grammar.json"
+    if (-not (Test-Path "data/$datasetFilename" -PathType Leaf)) {
+        Write-Host "Skipping optional $Source/$Setting/${Grammar}: data/$datasetFilename not found."
+        return
+    }
+
+    Run-TestWithCoverage -Setting $Setting -Grammar $Grammar -Source $Source
+}
+
 Cleanup-OldOutputs
 
 Run-TestWithCoverage -Setting "baseline" -Grammar "email" -Source "email_validator"
 Run-TestWithCoverage -Setting "diverse" -Grammar "email" -Source "email_validator"
 Run-TestWithCoverage -Setting "baseline" -Grammar "css-color" -Source "webcolors"
 Run-TestWithCoverage -Setting "diverse" -Grammar "css-color" -Source "webcolors"
+Maybe-RunTestWithCoverage -Setting "baseline" -Grammar "semver" -Source "semver"
+Maybe-RunTestWithCoverage -Setting "diverse" -Grammar "semver" -Source "semver"
 
 & $VenvPython "report_case_study.py"
 Write-Host "Case study summary written to case_study_summary.json."

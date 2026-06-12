@@ -48,6 +48,20 @@ run_test_with_coverage() {
     python -m coverage json --data-file="$coverage_file" -o "$coverage_json_file" >/dev/null
 }
 
+maybe_run_test_with_coverage() {
+    local setting=$1
+    local grammar=$2
+    local source=$3
+    local dataset_filename="${setting}-${grammar}.json"
+
+    if [[ ! -f "data/$dataset_filename" ]]; then
+        echo "Skipping optional $source/$setting/$grammar: data/$dataset_filename not found."
+        return 0
+    fi
+
+    run_test_with_coverage "$setting" "$grammar" "$source"
+}
+
 cleanup_old_outputs
 
 run_test_with_coverage "baseline" "email" "email_validator"
@@ -55,6 +69,9 @@ run_test_with_coverage "diverse" "email" "email_validator"
 
 run_test_with_coverage "baseline" "css-color" "webcolors"
 run_test_with_coverage "diverse" "css-color" "webcolors"
+
+maybe_run_test_with_coverage "baseline" "semver" "semver"
+maybe_run_test_with_coverage "diverse" "semver" "semver"
 
 python report_case_study.py
 echo "Case study summary written to case_study_summary.json."

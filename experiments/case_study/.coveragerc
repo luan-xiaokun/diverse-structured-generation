@@ -3,6 +3,8 @@ branch = True
 omit = 
 	email_validator/__main__.py
 	email_validator/deliverability.py
+	semver/__main__.py
+	semver/cli.py
 
 [report]
 precision = 2

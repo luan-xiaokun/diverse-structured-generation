@@ -7,10 +7,14 @@ EMAIL_VALIDATOR_SUBDIR="email_validator"
 WEBCOLORS_URL="https://github.com/ubernostrum/webcolors.git"
 WEBCOLORS_COMMIT="834f77b381fad6eb31634d583894c3bc16a7ff99"
 WEBCOLORS_SUBDIR="src/webcolors"
+PYTHON_SEMVER_URL="https://github.com/python-semver/python-semver.git"
+PYTHON_SEMVER_COMMIT="6adf8765f6e21910f1f0c13151ce84f32f8d431d"
+PYTHON_SEMVER_SUBDIR="src/semver"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 EMAIL_VALIDATOR_TARGET_DIR="$SCRIPT_DIR/email_validator"
 WEBCOLORS_TARGET_DIR="$SCRIPT_DIR/webcolors"
+PYTHON_SEMVER_TARGET_DIR="$SCRIPT_DIR/semver"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -71,4 +75,15 @@ export_snapshot \
 echo "Done."
 echo "Exported $WEBCOLORS_SUBDIR at WEBCOLORS_COMMIT $WEBCOLORS_COMMIT to:"
 echo "  $WEBCOLORS_TARGET_DIR"
+
+export_snapshot \
+    "$PYTHON_SEMVER_URL" \
+    "$PYTHON_SEMVER_COMMIT" \
+    "$PYTHON_SEMVER_SUBDIR" \
+    "$TMP_DIR/python-semver" \
+    "$PYTHON_SEMVER_TARGET_DIR"
+
+echo "Done."
+echo "Exported $PYTHON_SEMVER_SUBDIR at PYTHON_SEMVER_COMMIT $PYTHON_SEMVER_COMMIT to:"
+echo "  $PYTHON_SEMVER_TARGET_DIR"
 echo "Pinned package snapshots refreshed successfully."

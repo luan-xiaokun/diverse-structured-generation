@@ -6,10 +6,14 @@ $EmailValidatorSubdir = "email_validator"
 $WebcolorsUrl = "https://github.com/ubernostrum/webcolors.git"
 $WebcolorsCommit = "834f77b381fad6eb31634d583894c3bc16a7ff99"
 $WebcolorsSubdir = "src/webcolors"
+$PythonSemverUrl = "https://github.com/python-semver/python-semver.git"
+$PythonSemverCommit = "6adf8765f6e21910f1f0c13151ce84f32f8d431d"
+$PythonSemverSubdir = "src/semver"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $EmailValidatorTargetDir = Join-Path $ScriptDir "email_validator"
 $WebcolorsTargetDir = Join-Path $ScriptDir "webcolors"
+$PythonSemverTargetDir = Join-Path $ScriptDir "semver"
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("case-study-" + [System.Guid]::NewGuid().ToString("N"))
 
 function Require-Command {
@@ -68,6 +72,17 @@ try {
     Write-Host "Done."
     Write-Host "Exported $WebcolorsSubdir at WEBCOLORS_COMMIT $WebcolorsCommit to:"
     Write-Host "  $WebcolorsTargetDir"
+
+    Export-Snapshot `
+        -RepoUrl $PythonSemverUrl `
+        -Commit $PythonSemverCommit `
+        -SparseSubdir $PythonSemverSubdir `
+        -CheckoutDir (Join-Path $TempDir "python-semver") `
+        -TargetDir $PythonSemverTargetDir
+
+    Write-Host "Done."
+    Write-Host "Exported $PythonSemverSubdir at PYTHON_SEMVER_COMMIT $PythonSemverCommit to:"
+    Write-Host "  $PythonSemverTargetDir"
     Write-Host "Pinned package snapshots refreshed successfully."
 }
 finally {

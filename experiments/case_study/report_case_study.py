@@ -32,6 +32,22 @@ RUNS = (
         "coverage_data": ".coverage.diverse.css-color",
         "html_dir": "htmlcov_diverse_css-color",
     },
+    {
+        "library": "semver",
+        "setting": "baseline",
+        "grammar": "semver",
+        "coverage_data": ".coverage.baseline.semver",
+        "html_dir": "htmlcov_baseline_semver",
+        "optional": True,
+    },
+    {
+        "library": "semver",
+        "setting": "diverse",
+        "grammar": "semver",
+        "coverage_data": ".coverage.diverse.semver",
+        "html_dir": "htmlcov_diverse_semver",
+        "optional": True,
+    },
 )
 
 
@@ -42,6 +58,9 @@ def load_json_report(path):
 
 def summarize_run(run):
     json_path = PROJECT_ROOT / f"{run['coverage_data']}.json"
+    if run.get("optional") and not json_path.exists():
+        return None
+
     report = load_json_report(json_path)
     totals = report["totals"]
     total_coverage_percentage = round(totals["percent_covered"], 2)
@@ -67,7 +86,7 @@ def summarize_run(run):
 
 
 def main():
-    runs = [summarize_run(run) for run in RUNS]
+    runs = [summary for run in RUNS if (summary := summarize_run(run)) is not None]
     summary = {"runs": runs}
 
     output_path = PROJECT_ROOT / "case_study_summary.json"

@@ -4,6 +4,7 @@
 .coverage.*
 email_validator/
 webcolors/
+semver/
 htmlcov_*/
 case_study_summary.json
 **/__pycache__/

@@ -6,11 +6,19 @@ coverage percentage in two open-source Python libraries:
 
 - `email_validator`
 - `webcolors`
+- `semver` (`python-semver`)
 
 The study runs the same harness on two datasets per domain:
 
 - `baseline`
 - `diverse`
+
+The `semver` case study is optional in the historical workflow: it runs when
+`data/baseline-semver.json` and/or `data/diverse-semver.json` are present. It
+is intended as a robustness-oriented parser-library case study. The current
+project `semver` grammar is deliberately a little wider than the
+`python-semver` parser accepts, so both successful parsing paths and parser
+rejection paths contribute to coverage.
 
 For OSP review, this case study is supplementary evidence that diverse
 structured samples can be useful as downstream test inputs. It is not required
@@ -39,9 +47,9 @@ for the full paper-reproduction map across all tables.
 - `Makefile`: convenience commands for common Linux / macOS workflows
 - `.coveragerc`: coverage configuration for the copied libraries
 
-The `email_validator/` and `webcolors/` directories are pinned snapshots of
-upstream packages and should be refreshed via the fetch script for your
-platform, not edited by hand.
+The `email_validator/`, `webcolors/`, and `semver/` directories are pinned
+snapshots of upstream packages and should be refreshed via the fetch script for
+your platform, not edited by hand.
 
 ## Environment
 
@@ -94,12 +102,16 @@ cd experiments/case_study
 .\run_case_study.ps1
 ```
 
-The runner executes four coverage jobs:
+The runner executes four required coverage jobs:
 
 1. baseline email samples against `email_validator`
 2. diverse email samples against `email_validator`
 3. baseline CSS color samples against `webcolors`
 4. diverse CSS color samples against `webcolors`
+
+If `data/baseline-semver.json` or `data/diverse-semver.json` exist, the runner
+also executes optional semantic-version parser coverage jobs against
+`python-semver`.
 
 It writes per-run coverage data to `.coverage.*`, JSON reports to
 `.coverage.*.json`, HTML reports to `htmlcov_*`, and a consolidated summary to
@@ -107,9 +119,9 @@ It writes per-run coverage data to `.coverage.*`, JSON reports to
 
 ## Refresh Pinned Packages
 
-The fetch scripts recreate the ignored `email_validator/` and `webcolors/`
-directories from pinned upstream revisions. Run them before the case study in a
-clean clone.
+The fetch scripts recreate the ignored `email_validator/`, `webcolors/`, and
+`semver/` directories from pinned upstream revisions. Run them before the case
+study in a clean clone.
 
 ### Linux / macOS
 
