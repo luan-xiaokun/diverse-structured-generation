@@ -13,7 +13,7 @@ v1 turns the exploratory single-obligation DFA traversal into a trace-first rese
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Baseline Replay Foundation** - Modularize the demo and make canonical trace replay the correctness boundary.
+- [x] **Phase 1: Baseline Replay Foundation** - Modularize the demo and make canonical trace replay the correctness boundary.
 - [ ] **Phase 2: Feasible Multi-Obligation Search** - Build jointly feasible targets and bounded coverage-aware search with oracle diagnostics.
 - [ ] **Phase 3: Complementary Suite Selection** - Select compact, high-coverage suites from a shared verified candidate pool.
 - [ ] **Phase 4: DFA-Masked LLM Quality Guidance** - Improve quality only within DFA-legal actions and retain replay evidence.
@@ -32,11 +32,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Every baseline or later candidate can be replayed through the same DFA trace path to confirm acceptance and actual state, byte-transition, and ordered state-pair coverage.
   3. A reported witness carries a replayed coverage certificate, so no result is credited from predicted rather than actual trace coverage.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans executed
 
 - [x] 01-01-PLAN.md
 - [x] 01-02-PLAN.md
-- [ ] 01-03-PLAN.md
+- [x] 01-03-PLAN.md
 
 ### Phase 2: Feasible Multi-Obligation Search
 
@@ -99,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Baseline Replay Foundation | 2/3 | In Progress|  |
+| 1. Baseline Replay Foundation | 3/3 | Complete | 2026-07-23 |
 | 2. Feasible Multi-Obligation Search | 0/TBD | Not started | - |
 | 3. Complementary Suite Selection | 0/TBD | Not started | - |
 | 4. DFA-Masked LLM Quality Guidance | 0/TBD | Not started | - |
