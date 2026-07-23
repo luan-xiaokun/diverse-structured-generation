@@ -14,3 +14,4 @@ include = ["aiap*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["real_case_parity: requires provisioned locked Hugging Face tokenizer"]

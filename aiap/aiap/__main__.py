@@ -1,8 +1,4 @@
-"""Module entry point; the CLI is connected in a later plan."""
-
-
-def main() -> int:
-    return 0
+from .cli import main
 
 
 if __name__ == "__main__":
