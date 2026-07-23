@@ -32,10 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Every baseline or later candidate can be replayed through the same DFA trace path to confirm acceptance and actual state, byte-transition, and ordered state-pair coverage.
   3. A reported witness carries a replayed coverage certificate, so no result is credited from predicted rather than actual trace coverage.
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 
 - [x] 01-01-PLAN.md
-- [ ] 01-02-PLAN.md
+- [x] 01-02-PLAN.md
 - [ ] 01-03-PLAN.md
 
 ### Phase 2: Feasible Multi-Obligation Search
@@ -99,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Baseline Replay Foundation | 1/3 | In Progress|  |
+| 1. Baseline Replay Foundation | 2/3 | In Progress|  |
 | 2. Feasible Multi-Obligation Search | 0/TBD | Not started | - |
 | 3. Complementary Suite Selection | 0/TBD | Not started | - |
 | 4. DFA-Masked LLM Quality Guidance | 0/TBD | Not started | - |
