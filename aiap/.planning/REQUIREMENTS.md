@@ -7,8 +7,8 @@
 
 ### Baseline Demo
 
-- [ ] **BASE-01**: 研究者可将现有单-obligation BFS demo 整理为可导入的基线模块，并在固定 case-study 输入上复现其 accepted witness 与覆盖结果。
-- [ ] **BASE-02**: 研究者可用同一 DFA trace replay 明确验证每个基线或新 witness 的接受性及其实际覆盖的 state、byte-transition 与 ordered state-pair path obligations。
+- [x] **BASE-01**: 研究者可将现有单-obligation BFS demo 整理为可导入的基线模块，并在固定 case-study 输入上复现其 accepted witness 与覆盖结果。
+- [x] **BASE-02**: 研究者可用同一 DFA trace replay 明确验证每个基线或新 witness 的接受性及其实际覆盖的 state、byte-transition 与 ordered state-pair path obligations。
 
 ### Multi-Obligation Search
 
@@ -60,8 +60,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase 1 | Pending |
-| BASE-02 | Phase 1 | Pending |
+| BASE-01 | Phase 1 | Complete |
+| BASE-02 | Phase 1 | Complete |
 | MULTI-01 | Phase 2 | Pending |
 | MULTI-02 | Phase 2 | Pending |
 | MULTI-03 | Phase 2 | Pending |
@@ -78,6 +78,7 @@
 | EVAL-04 | Phase 5 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 16 total
 - Mapped to phases: 16
 - Unmapped: 0 ✓
