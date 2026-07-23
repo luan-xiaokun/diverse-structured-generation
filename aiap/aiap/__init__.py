@@ -12,6 +12,7 @@ from .replay import (
     aggregate_certificates,
     coverage_ratios,
     replay_candidate,
+    ReplayPayload,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "aggregate_certificates",
     "coverage_ratios",
     "accepted_certificates",
+    "ReplayPayload",
 ]

@@ -43,6 +43,10 @@ class CoveredObligation:
     def from_obligation(cls, item: CoverageObligation) -> "CoveredObligation":
         return cls(item.obligation_id, item.kind, item.raw_meaning)
 
+    @property
+    def raw_meaning(self) -> int | list[int]:
+        return self.meaning
+
 
 @dataclass
 class CandidateCertificate:
@@ -205,3 +209,7 @@ def coverage_ratios(catalog: ObligationCatalog, aggregates: dict[str, Any], thre
 
 def accepted_certificates(certificates: Iterable[CandidateCertificate]):
     return (certificate for certificate in certificates if certificate.aggregate_eligible and certificate.accepted)
+
+
+# Name used by the design contract for the payload carried by a candidate.
+ReplayPayload = CandidateCertificate
