@@ -41,7 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 01.1: Repair tokenizer vocabulary and byte-DFA contract (INSERTED)
 
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
-**Requirements**: Contract repair for the existing Phase 1 baseline; no new milestone requirement IDs
+**Requirements**: BASE-01, BASE-02
 **Depends on:** Phase 1
 **Plans:** 7 plans
 
