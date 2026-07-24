@@ -2,6 +2,8 @@
 
 import pickle
 
+import pytest
+
 from regex_dfa_guide import DiverseGuideDFA
 
 # ---------------------------------------------------------------------------
@@ -234,6 +236,36 @@ def test_different_regex_not_equal(vocab_ab):
     dfa1 = DiverseGuideDFA("(?:[ab]+)$", 99, vocab_ab)
     dfa2 = DiverseGuideDFA("(?:[ab])$", 99, vocab_ab)
     assert dfa1 != dfa2
+
+
+@pytest.mark.parametrize(
+    ("value", "actual_type"),
+    [("x", "str"), (bytearray(b"x"), "bytearray"), ([120], "list")],
+)
+def test_constructor_rejects_non_bytes_vocabulary_values(value, actual_type):
+    with pytest.raises(TypeError) as exc_info:
+        DiverseGuideDFA("(?:x)$", 99, {7: value})
+
+    message = str(exc_info.value)
+    assert "7" in message
+    assert "bytes" in message
+    assert actual_type in message
+
+
+def test_token_trace_uses_exact_mixed_ascii_and_high_bytes():
+    dfa = DiverseGuideDFA("(?:A\u1680)$", 99, {7: b"A\xe1\x9a\x80"})
+    initial = dfa.get_initial_state()
+
+    expected = dfa.get_byte_transition_sequence("A\u1680")
+    actual = dfa.get_byte_transition_sequence_from_state(initial, 7)
+
+    assert actual == expected
+    assert [byte for byte, _ in actual] == [0, ord("A"), 0xE1, 0x9A, 0x80]
+    assert dfa.get_byte_state_sequence(initial, 7) == [state for _, state in expected]
+    final_state = actual[-1][1]
+    assert dfa.get_byte_transition_sequence_from_state(final_state, 99) == [
+        (0, final_state)
+    ]
 
 
 # ---------------------------------------------------------------------------
