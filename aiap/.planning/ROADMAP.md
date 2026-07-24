@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
 **Requirements**: BASE-01, BASE-02
 **Depends on:** Phase 1
-**Plans:** 2/7 plans executed
+**Plans:** 3/7 plans executed
 
 **Success Criteria** (what must be TRUE):
 
@@ -63,7 +63,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01.1-03-PLAN.md — Add the strict self-contained schema-1 artifact envelope and failure taxonomy.
+- [x] 01.1-03-PLAN.md — Add the strict self-contained schema-1 artifact envelope and failure taxonomy.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

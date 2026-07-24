@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Repair tokenizer vocabulary and byte-DFA contract
 status: executing
-stopped_at: Phase 01.1 planning complete
-last_updated: "2026-07-24T06:28:55.766Z"
+stopped_at: Completed 01.1-03-PLAN.md
+last_updated: "2026-07-24T06:38:31.997Z"
 last_activity: 2026-07-24
 last_activity_desc: Phase 01.1 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-23)
 ## Current Position
 
 Phase: 01.1 (Repair tokenizer vocabulary and byte-DFA contract) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-07-24 — Phase 01.1 execution started
 
@@ -56,6 +56,7 @@ Progress: [██░░░░░░░░] 17%
 
 | Phase 1 P1 | 15min | 2 tasks | 8 files |
 | Phase 01.1 P02 | 20 minutes | 1 tasks | 11 files |
+| Phase 01.1 P03 | 3min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 1]: Parent DFA remains sole transition authority for baseline traversal
 - [Phase 01.1]: EOS is omitted from bytes vocabularies and retained as a zero-byte token action.
 - [Phase 01.1]: Native verification requires regex-dfa-guide 0.3.0, an active-environment extension, and an exact byte trace.
+- [Phase 01.1]: Schema-1 DFA artifacts use fixed magic, a package-independent version, and bounded full-consumption decode.
 
 ### Pending Todos
 
@@ -94,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-24T06:28:31.020Z
-Stopped at: Phase 01.1 context gathered
-Resume file: .planning/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-CONTEXT.md
+Last session: 2026-07-24T06:38:31.991Z
+Stopped at: Completed 01.1-03-PLAN.md
+Resume file: None
