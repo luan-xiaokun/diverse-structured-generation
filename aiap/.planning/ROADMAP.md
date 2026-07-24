@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
 **Requirements**: BASE-01, BASE-02
 **Depends on:** Phase 1
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 **Success Criteria** (what must be TRUE):
 
@@ -79,7 +79,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 01.1-07-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
+- [x] 01.1-07-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
 
 ### Phase 2: Feasible Multi-Obligation Search
 

@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Repair tokenizer vocabulary and byte-DFA contract
 status: executing
-stopped_at: Completed 01.1-06-PLAN.md
-last_updated: "2026-07-24T07:13:29.491Z"
+stopped_at: Completed 01.1-07-PLAN.md
+last_updated: "2026-07-24T07:23:07.331Z"
 last_activity: 2026-07-24
 last_activity_desc: Phase 01.1 execution started
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 17
+  completed_plans: 10
+  percent: 33
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-23)
 ## Current Position
 
 Phase: 01.1 (Repair tokenizer vocabulary and byte-DFA contract) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 Last activity: 2026-07-24 — Phase 01.1 execution started
 
@@ -60,6 +60,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 01.1 P04 | 22min | 2 tasks | 1 files |
 | Phase 01.1 P05 | 16min | 2 tasks | 8 files |
 | Phase 01.1 P06 | 22min | 1 tasks | 2 files |
+| Phase 01.1 P07 | 15min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 01.1]: A witness succeeds only after aggregate-eligible canonical replay credits its exact stable target ID. — Prevents predicted search matches from being reported as coverage.
 - [Phase 01.1]: Use max_expansions=None for exhaustive BFS; emit search_limit only when an explicit cap is exhausted. — Separates bounded resource exhaustion from graph infeasibility.
 - [Phase 01.1]: Classify only selected-baseline missing obligations before reachable-only witness selection. — Preserves the locked D-14 through D-17 witness-selection contract.
+- [Phase 01.1]: Treat the initial DFA state as the first ordered event for direct/token parity. — Direct get_state_sequence includes the initial state.
+- [Phase 01.1]: Run locked Qwen parity only after provisioning and under HF_HUB_OFFLINE=1. — Preserves immutable tokenizer evidence without online fallback.
 
 ### Pending Todos
 
@@ -105,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-24T07:13:29.486Z
-Stopped at: Completed 01.1-06-PLAN.md
+Last session: 2026-07-24T07:23:07.318Z
+Stopped at: Completed 01.1-07-PLAN.md
 Resume file: None
