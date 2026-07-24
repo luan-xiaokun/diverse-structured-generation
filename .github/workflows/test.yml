@@ -39,6 +39,11 @@ jobs:
       - name: Run tests with coverage
         run: uv run poe test
 
+      - name: Run hermetic AIAP tests
+        env:
+          PYTHONPATH: aiap
+        run: uv run pytest aiap/tests -m "not real_case_parity" -q
+
       - name: Run Rust tests
         run: uv run poe test-rust
 
@@ -129,4 +134,5 @@ jobs:
       - name: Run offline CSS/email parity
         env:
           HF_HUB_OFFLINE: "1"
+          PYTHONPATH: aiap
         run: uv run pytest aiap/tests/test_case_parity.py -m real_case_parity -q
