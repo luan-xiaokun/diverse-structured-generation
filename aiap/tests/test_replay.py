@@ -1,4 +1,3 @@
-import sys
 from importlib.metadata import version
 from pathlib import Path
 
@@ -15,11 +14,15 @@ def make_dfa():
 
 def test_active_native_extension_runs_bytes_only_trace():
     extension_path = Path(native_extension.__file__).resolve()
-    environment_root = Path(sys.prefix).resolve()
+    repository_root = Path(__file__).resolve().parents[2]
+    source_package = (
+        repository_root / "regex_dfa_guide" / "python" / "regex_dfa_guide"
+    ).resolve()
+
     assert version("regex-dfa-guide") == "0.3.0"
-    assert extension_path.is_relative_to(environment_root), (
+    assert extension_path.parent == source_package, (
         extension_path,
-        environment_root,
+        source_package,
     )
 
     dfa = DiverseGuideDFA("a", 0, {1: b"a"})
