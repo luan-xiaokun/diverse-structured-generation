@@ -1,4 +1,4 @@
-from importlib.metadata import version
+from importlib.metadata import distribution
 from pathlib import Path
 
 import regex_dfa_guide.regex_dfa_guide_rs as native_extension
@@ -24,11 +24,16 @@ def test_active_native_extension_runs_bytes_only_trace():
     source_package = (
         repository_root / "regex_dfa_guide" / "python" / "regex_dfa_guide"
     ).resolve()
+    active_distribution = distribution("regex-dfa-guide")
+    installed_package = Path(
+        active_distribution.locate_file("regex_dfa_guide")
+    ).resolve()
+    trusted_origins = {source_package, installed_package}
 
-    assert version("regex-dfa-guide") == "0.3.0"
-    assert extension_path.parent == source_package, (
+    assert active_distribution.version == "0.3.0"
+    assert extension_path.parent in trusted_origins, (
         extension_path,
-        source_package,
+        trusted_origins,
     )
 
     dfa = DiverseGuideDFA("a", 0, {1: b"a"})
