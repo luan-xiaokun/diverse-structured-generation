@@ -1,6 +1,6 @@
 //! Build a DFA for guiding diverse structured generation
 
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 use regex_automata::dfa::dense::DFA;
 use regex_automata::dfa::Automaton;
 use regex_automata::util::alphabet::Unit;
@@ -16,6 +16,63 @@ use crate::{Error, Result};
 pub type StateId = u32;
 pub type TokenId = u64;
 pub type Byte = u8;
+
+/// Strict self-contained artifact boundary, independent of crate/package version.
+pub const ARTIFACT_MAGIC: &[u8; 8] = b"RDGDFA\0\0";
+pub const ARTIFACT_SCHEMA_VERSION: u16 = 1;
+/// 256 MiB cap: 9.8x the 27,375,184-byte largest measured locked-Qwen artifact.
+pub const ARTIFACT_DECODE_LIMIT_BYTES: u64 = 268_435_456;
+
+/// Reject oversized artifact input before bincode can inspect or allocate from it.
+pub fn validate_artifact_input_len(len: usize) -> Result<()> {
+    if len > ARTIFACT_DECODE_LIMIT_BYTES as usize {
+        return Err(Error::CorruptArtifact(format!(
+            "artifact input exceeds {ARTIFACT_DECODE_LIMIT_BYTES}-byte decode limit"
+        )));
+    }
+    Ok(())
+}
+
+/// Encode the complete DFA index and mutable counters behind a schema-1 envelope.
+pub fn encode_artifact(dfa: &DiverseGuideDFA) -> Result<Vec<u8>> {
+    let payload = bincode::encode_to_vec(dfa, config::standard()).map_err(|error| {
+        Error::CorruptArtifact(format!("artifact encoding failed: {error}"))
+    })?;
+    let mut artifact = Vec::with_capacity(ARTIFACT_MAGIC.len() + 2 + payload.len());
+    artifact.extend_from_slice(ARTIFACT_MAGIC);
+    artifact.extend_from_slice(&ARTIFACT_SCHEMA_VERSION.to_le_bytes());
+    artifact.extend_from_slice(&payload);
+    Ok(artifact)
+}
+
+/// Decode only current schema-1 artifacts and require complete payload consumption.
+pub fn decode_artifact(input: &[u8]) -> Result<DiverseGuideDFA> {
+    validate_artifact_input_len(input.len())?;
+    if input.len() < ARTIFACT_MAGIC.len() || input[..ARTIFACT_MAGIC.len()] != *ARTIFACT_MAGIC {
+        return Err(Error::LegacyArtifact);
+    }
+
+    let schema_start = ARTIFACT_MAGIC.len();
+    let schema_end = schema_start + std::mem::size_of::<u16>();
+    let schema_bytes = input
+        .get(schema_start..schema_end)
+        .ok_or_else(|| Error::CorruptArtifact("incomplete artifact schema field".to_owned()))?;
+    let schema = u16::from_le_bytes([schema_bytes[0], schema_bytes[1]]);
+    if schema != ARTIFACT_SCHEMA_VERSION {
+        return Err(Error::UnsupportedArtifactSchema(schema));
+    }
+
+    let payload = &input[schema_end..];
+    let (dfa, consumed): (DiverseGuideDFA, usize) = bincode::decode_from_slice(
+        payload,
+        config::standard().with_limit::<{ ARTIFACT_DECODE_LIMIT_BYTES as usize }>(),
+    )
+    .map_err(|error| Error::CorruptArtifact(format!("bincode decode failed: {error}")))?;
+    if consumed != payload.len() {
+        return Err(Error::CorruptArtifact("trailing bytes after artifact payload".to_owned()));
+    }
+    Ok(dfa)
+}
 
 /// Immutable DFA structure built from a regex and vocabulary.
 /// All expensive construction is done once here; instances are Arc-shareable.

@@ -2,13 +2,12 @@
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use bincode::config;
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict};
 use rustc_hash::FxHashMap as HashMap;
 
-use crate::diverse_guide_dfa::DiverseGuideDFA;
+use crate::diverse_guide_dfa::{decode_artifact, encode_artifact, DiverseGuideDFA};
 
 #[pyclass(
     name = "DiverseGuideDFA",
@@ -194,26 +193,14 @@ impl PyDiverseGuideDFA {
             let cls = PyModule::import(py, "regex_dfa_guide.regex_dfa_guide_rs")?
                 .getattr("DiverseGuideDFA")?;
             let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
-            let binary_data: Vec<u8> = bincode::encode_to_vec(&*dfa_guard, config::standard())
-                .map_err(|e| {
-                    PyErr::new::<PyValueError, _>(format!(
-                        "Serialization of DiverseGuideDFA failed: {}",
-                        e
-                    ))
-                })?;
+            let binary_data = encode_artifact(&dfa_guard).map_err(PyErr::from)?;
             Ok((cls.getattr("from_binary")?.unbind(), (binary_data,)))
         })
     }
 
     #[staticmethod]
     fn from_binary(binary_data: Vec<u8>) -> PyResult<Self> {
-        let (dfa, _): (DiverseGuideDFA, usize) =
-            bincode::decode_from_slice(&binary_data[..], config::standard()).map_err(|e| {
-                PyErr::new::<PyValueError, _>(format!(
-                    "Deserialization of DiverseGuideDFA failed: {}",
-                    e
-                ))
-            })?;
+        let dfa = decode_artifact(&binary_data).map_err(PyErr::from)?;
         Ok(PyDiverseGuideDFA(Arc::new(RwLock::new(dfa))))
     }
 }

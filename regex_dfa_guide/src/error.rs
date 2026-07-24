@@ -19,6 +19,13 @@ pub enum Error {
     NoTransitionFound(usize, usize),
     #[error("No token transition found for state {0} and input token {1}")]
     NoTokenTransitionFound(usize, usize),
+    // Artifact errors have stable machine-readable prefixes for callers.
+    #[error("legacy_artifact: missing or invalid artifact magic")]
+    LegacyArtifact,
+    #[error("unsupported_schema: {0}")]
+    UnsupportedArtifactSchema(u16),
+    #[error("corrupt_artifact: {0}")]
+    CorruptArtifact(String),
 }
 
 #[cfg(feature = "python-bindings")]
