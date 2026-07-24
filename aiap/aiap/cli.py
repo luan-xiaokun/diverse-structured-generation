@@ -195,5 +195,10 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     if args.jsonl_path:
-        write_certificates_jsonl(args.jsonl_path, certs)
+        # JSONL is the generated-witness artifact. Initial samples are used
+        # internally to compute missing obligations, but are not emitted.
+        write_certificates_jsonl(
+            args.jsonl_path,
+            [certificate for certificate in certs if certificate.metadata.get("proposal")],
+        )
     return 0

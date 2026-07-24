@@ -52,3 +52,20 @@ def test_json_safe_aggregates_encode_tuple_keys():
 
     payload = _json_safe_aggregates({"path_counts": {(1, 2): 3}})
     assert payload == {"path_counts": [{"key": [1, 2], "count": 3}]}
+
+
+def test_jsonl_output_is_reserved_for_generated_proposals(tmp_path):
+    from aiap.cli import write_certificates_jsonl
+    from aiap.replay import CandidateCertificate
+
+    certificates = [
+        CandidateCertificate([], 0, 0, [], True, True, metadata={}),
+        CandidateCertificate(
+            [], 0, 0, [], True, True, metadata={"proposal": "state:2"}
+        ),
+    ]
+    output = tmp_path / "witnesses.jsonl"
+    write_certificates_jsonl(
+        output, [c for c in certificates if c.metadata.get("proposal")]
+    )
+    assert output.read_text(encoding="utf-8").count("\n") == 1
