@@ -34,9 +34,9 @@ class DiverseRegexGuide:
             HuggingFace tokenizer whose vocabulary is compiled into the DFA's
             token-transition table.
         """
-        token_id_to_token = build_token_id_map(tokenizer)  # fixes vocab decoding bug
+        token_id_to_bytes = build_token_id_map(tokenizer)
         self.dfa = DiverseGuideDFA(
-            "(?:" + regex_string + ")$", tokenizer.eos_token_id, token_id_to_token
+            "(?:" + regex_string + ")$", tokenizer.eos_token_id, token_id_to_bytes
         )
         self.eos_token_id = tokenizer.eos_token_id
         self.initial_state = self.dfa.get_initial_state()

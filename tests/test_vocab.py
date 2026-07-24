@@ -72,8 +72,9 @@ def test_build_token_id_map_values_are_bytes(mock_tokenizer):
 class _VocabTokenizer:
     """Tokenizer stub to trigger uncommon vocab decoding branches."""
 
-    def __init__(self, vocab: dict):
+    def __init__(self, vocab: dict, replacement_tokens: set[str] | None = None):
         self._vocab = vocab
+        self._replacement_tokens = replacement_tokens or set()
         self.eos_token_id = 99
         self._id = id(self)
 
@@ -88,9 +89,9 @@ class _VocabTokenizer:
         token = tokens[0]
         if isinstance(token, bytes):
             return token.decode("utf-8", errors="replace")
-        if token in {"<0x80>", "ab", "Aab", "☃"}:
+        if token in self._replacement_tokens:
             return "\ufffd"
-        if token == "replacement":
+        if token == "\ufffd":
             return "\ufffd"
         if token == "snowman":
             return "☃"
@@ -108,18 +109,20 @@ def test_build_reduced_vocab_recovers_exact_bytes_for_synthetic_token_forms():
     high_1 = inverse[0xE1]
     high_2 = inverse[0x9A]
     high_3 = inverse[0x80]
+    vocab = {
+        "ascii": 1,
+        "snowman": 2,
+        high_1: 3,
+        high_2 + high_3: 4,
+        "A" + high_1: 5,
+        "<0x80>": 6,
+        "\ufffd": 7,
+        b"\xff": 8,
+        "<eos>": 99,
+    }
     tok = _VocabTokenizer(
-        {
-            "ascii": 1,
-            "snowman": 2,
-            high_1: 3,
-            high_2 + high_3: 4,
-            "A" + high_1: 5,
-            "<0x80>": 6,
-            "replacement": 7,
-            b"\xff": 8,
-            "<eos>": 99,
-        }
+        vocab,
+        replacement_tokens={high_1, high_2 + high_3, "A" + high_1},
     )
 
     token_map = build_token_id_map(tok)
@@ -139,6 +142,6 @@ def test_build_reduced_vocab_recovers_exact_bytes_for_synthetic_token_forms():
 
 
 def test_build_reduced_vocab_runtime_error_for_unmappable_replacement():
-    tok = _VocabTokenizer({"☃": 7, "<eos>": 99})
+    tok = _VocabTokenizer({"☃": 7, "<eos>": 99}, replacement_tokens={"☃"})
     with pytest.raises(RuntimeError):
         build_reduced_vocab(tok)
