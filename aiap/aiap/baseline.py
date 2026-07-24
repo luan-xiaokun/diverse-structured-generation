@@ -32,13 +32,18 @@ def get_coverage_obligations(
         for item in catalog
         if (
             (item.state is not None and state_count[item.state] < cov_threshold)
-            or (item.transition is not None and transition_count[item.transition] < cov_threshold)
+            or (
+                item.transition is not None
+                and transition_count[item.transition] < cov_threshold
+            )
             or (item.path is not None and path_count[item.path] < cov_threshold)
         )
     ]
 
 
-def construct_one_witness(dfa: DiverseGuideDFA, obligation: CoverageObligation) -> list[int] | None:
+def construct_one_witness(
+    dfa: DiverseGuideDFA, obligation: CoverageObligation
+) -> list[int] | None:
     """Find the shortest accepted token sequence meeting one obligation."""
     initial_state = dfa.get_initial_state()
     queue = deque([(initial_state, [])])
@@ -51,7 +56,9 @@ def construct_one_witness(dfa: DiverseGuideDFA, obligation: CoverageObligation) 
         state, token_ids = queue.popleft()
         for token_id in dfa.get_allowed_token_ids(state):
             try:
-                transitions = dfa.get_byte_transition_sequence_from_state(state, token_id)
+                transitions = dfa.get_byte_transition_sequence_from_state(
+                    state, token_id
+                )
             except ValueError:
                 next_state = dfa.get_next_token_state(state, token_id)
                 transitions = []
@@ -60,7 +67,9 @@ def construct_one_witness(dfa: DiverseGuideDFA, obligation: CoverageObligation) 
             previous_state = state
             meets_obligation = False
             for byte, byte_next_state in transitions[1:]:
-                if obligation.is_met_by_transition((previous_state, byte, byte_next_state)):
+                if obligation.is_met_by_transition(
+                    (previous_state, byte, byte_next_state)
+                ):
                     meets_obligation = True
                     break
                 previous_state = byte_next_state

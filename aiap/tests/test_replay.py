@@ -1,8 +1,7 @@
-from regex_dfa_guide import DiverseGuideDFA
-
 from aiap.obligations import ObligationCatalog
-from aiap.reporting import read_certificates_jsonl, write_certificates_jsonl
 from aiap.replay import aggregate_certificates, replay_candidate
+from aiap.reporting import read_certificates_jsonl, write_certificates_jsonl
+from regex_dfa_guide import DiverseGuideDFA
 
 
 def make_dfa():

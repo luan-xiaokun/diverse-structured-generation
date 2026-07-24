@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable, Iterator
 
 from .replay import (
     ByteStep,
@@ -27,19 +27,30 @@ def certificate_to_dict(certificate: CandidateCertificate) -> dict[str, object]:
 def certificate_from_dict(payload: dict[str, object]) -> CandidateCertificate:
     actions = [
         TokenAction(
-            int(item["token_id"]), int(item["from_state"]),
+            int(item["token_id"]),
+            int(item["from_state"]),
             None if item.get("to_state") is None else int(item["to_state"]),
-            tuple(ByteStep(int(step["byte"]), int(step["from_state"]), int(step["to_state"])) for step in item.get("byte_steps", [])),
+            tuple(
+                ByteStep(
+                    int(step["byte"]), int(step["from_state"]), int(step["to_state"])
+                )
+                for step in item.get("byte_steps", [])
+            ),
         )
         for item in payload.get("token_actions", [])
     ]
     failure_payload = payload.get("failure")
     failure = FailureDiagnostic(**failure_payload) if failure_payload else None
-    covered = [CoveredObligation(str(item["id"]), str(item["kind"]), item["meaning"]) for item in payload.get("covered_obligations", [])]
+    covered = [
+        CoveredObligation(str(item["id"]), str(item["kind"]), item["meaning"])
+        for item in payload.get("covered_obligations", [])
+    ]
     return CandidateCertificate(
         token_ids=[int(value) for value in payload.get("token_ids", [])],
         initial_state=int(payload["initial_state"]),
-        final_state=None if payload.get("final_state") is None else int(payload["final_state"]),
+        final_state=None
+        if payload.get("final_state") is None
+        else int(payload["final_state"]),
         token_actions=actions,
         accepted=bool(payload.get("accepted", False)),
         aggregate_eligible=bool(payload.get("aggregate_eligible", False)),
@@ -49,15 +60,25 @@ def certificate_from_dict(payload: dict[str, object]) -> CandidateCertificate:
         decoded_text=payload.get("decoded_text"),
         metadata=dict(payload.get("metadata", {})),
         state_events=[int(value) for value in payload.get("state_events", [])],
-        transition_events=[tuple(int(value) for value in item) for item in payload.get("transition_events", [])],
-        path_events=[tuple(int(value) for value in item) for item in payload.get("path_events", [])],
+        transition_events=[
+            tuple(int(value) for value in item)
+            for item in payload.get("transition_events", [])
+        ],
+        path_events=[
+            tuple(int(value) for value in item)
+            for item in payload.get("path_events", [])
+        ],
     )
 
 
-def write_certificates_jsonl(path: str | Path, certificates: Iterable[CandidateCertificate]) -> None:
+def write_certificates_jsonl(
+    path: str | Path, certificates: Iterable[CandidateCertificate]
+) -> None:
     with Path(path).open("w", encoding="utf-8") as handle:
         for certificate in certificates:
-            handle.write(json.dumps(certificate_to_dict(certificate), sort_keys=True) + "\n")
+            handle.write(
+                json.dumps(certificate_to_dict(certificate), sort_keys=True) + "\n"
+            )
 
 
 def read_certificates_jsonl(path: str | Path) -> Iterator[CandidateCertificate]:
@@ -68,4 +89,8 @@ def read_certificates_jsonl(path: str | Path) -> Iterator[CandidateCertificate]:
 
 
 def accepted_certificates_jsonl(path: str | Path) -> Iterator[CandidateCertificate]:
-    return (certificate for certificate in read_certificates_jsonl(path) if certificate.aggregate_eligible and certificate.accepted)
+    return (
+        certificate
+        for certificate in read_certificates_jsonl(path)
+        if certificate.aggregate_eligible and certificate.accepted
+    )

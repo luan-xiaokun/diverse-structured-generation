@@ -2,8 +2,8 @@
 //!
 //! `regex_dfa_guide` crate provides a convenient way to build minimal DFAs from regexes.
 
-pub mod error;
 pub mod diverse_guide_dfa;
+pub mod error;
 
 pub use error::{Error, Result};
 

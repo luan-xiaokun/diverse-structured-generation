@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 from regex_dfa_guide import DiverseGuideDFA
 
@@ -40,7 +41,7 @@ class CoveredObligation:
     meaning: int | list[int]
 
     @classmethod
-    def from_obligation(cls, item: CoverageObligation) -> "CoveredObligation":
+    def from_obligation(cls, item: CoverageObligation) -> CoveredObligation:
         return cls(item.obligation_id, item.kind, item.raw_meaning)
 
     @property
@@ -76,7 +77,9 @@ class CandidateCertificate:
         return self.accepted
 
 
-def _failure(category: str, error: Exception, index: int | None = None) -> FailureDiagnostic:
+def _failure(
+    category: str, error: Exception, index: int | None = None
+) -> FailureDiagnostic:
     return FailureDiagnostic(category, str(error), index)
 
 
@@ -106,7 +109,9 @@ def replay_candidate(
         from_state = state
         try:
             to_state = int(dfa.get_next_token_state(from_state, token_id))
-        except Exception as error:  # parent bindings expose ValueError, but retain all diagnostics
+        except (
+            Exception
+        ) as error:  # parent bindings expose ValueError, but retain all diagnostics
             actions.append(TokenAction(token_id, from_state, None))
             failure = _failure("illegal_token", error, index)
             break
@@ -115,18 +120,27 @@ def replay_candidate(
             state = to_state
             continue
         try:
-            raw_steps = dfa.get_byte_transition_sequence_from_state(from_state, token_id)
+            raw_steps = dfa.get_byte_transition_sequence_from_state(
+                from_state, token_id
+            )
         except Exception as error:
             actions.append(TokenAction(token_id, from_state, to_state))
             failure = _failure("byte_trace", error, index)
             break
-        steps = [ByteStep(int(byte), from_state if n == 0 else raw_steps[n - 1][1], int(next_state))
-                 for n, (byte, next_state) in enumerate(raw_steps[1:], start=1)]
+        steps = [
+            ByteStep(
+                int(byte),
+                from_state if n == 0 else raw_steps[n - 1][1],
+                int(next_state),
+            )
+            for n, (byte, next_state) in enumerate(raw_steps[1:], start=1)
+        ]
         actions.append(TokenAction(token_id, from_state, to_state, tuple(steps)))
         if steps and steps[-1].to_state != to_state:
             failure = FailureDiagnostic(
                 "destination_mismatch",
-                f"byte trace ends at {steps[-1].to_state}, token transition ends at {to_state}",
+                f"byte trace ends at {steps[-1].to_state}, "
+                f"token transition ends at {to_state}",
                 index,
             )
             break
@@ -140,7 +154,9 @@ def replay_candidate(
     final_state = state
     accepted = failure is None and bool(dfa.is_final_state(final_state))
     if failure is None and not accepted:
-        failure = FailureDiagnostic("non_final", f"replay ended in non-final state {final_state}")
+        failure = FailureDiagnostic(
+            "non_final", f"replay ended in non-final state {final_state}"
+        )
 
     if accepted:
         state_events.insert(0, initial)
@@ -179,7 +195,9 @@ def replay_candidate(
     )
 
 
-def aggregate_certificates(certificates: Iterable[CandidateCertificate]) -> dict[str, Any]:
+def aggregate_certificates(
+    certificates: Iterable[CandidateCertificate],
+) -> dict[str, Any]:
     """Count ordered replay events from accepted certificates only."""
     states: Counter[int] = Counter()
     transitions: Counter[tuple[int, int, int]] = Counter()
@@ -190,25 +208,40 @@ def aggregate_certificates(certificates: Iterable[CandidateCertificate]) -> dict
         states.update(certificate.state_events)
         transitions.update(certificate.transition_events)
         paths.update(certificate.path_events)
-    return {"state_counts": dict(states), "transition_counts": dict(transitions), "path_counts": dict(paths)}
+    return {
+        "state_counts": dict(states),
+        "transition_counts": dict(transitions),
+        "path_counts": dict(paths),
+    }
 
 
-def coverage_ratios(catalog: ObligationCatalog, aggregates: dict[str, Any], threshold: int = 1) -> dict[str, float]:
+def coverage_ratios(
+    catalog: ObligationCatalog, aggregates: dict[str, Any], threshold: int = 1
+) -> dict[str, float]:
     def ratio(kind: str, key_fn: Any, field: str) -> float:
         items = [item for item in catalog if item.kind == kind]
         if not items:
             return 0.0
         counts = aggregates[field]
-        return sum(counts.get(key_fn(item), 0) >= threshold for item in items) / len(items)
+        return sum(counts.get(key_fn(item), 0) >= threshold for item in items) / len(
+            items
+        )
+
     return {
         "state": ratio("state", lambda item: item.state, "state_counts"),
-        "transition": ratio("transition", lambda item: item.transition, "transition_counts"),
+        "transition": ratio(
+            "transition", lambda item: item.transition, "transition_counts"
+        ),
         "path": ratio("path", lambda item: item.path, "path_counts"),
     }
 
 
 def accepted_certificates(certificates: Iterable[CandidateCertificate]):
-    return (certificate for certificate in certificates if certificate.aggregate_eligible and certificate.accepted)
+    return (
+        certificate
+        for certificate in certificates
+        if certificate.aggregate_eligible and certificate.accepted
+    )
 
 
 # Name used by the design contract for the payload carried by a candidate.

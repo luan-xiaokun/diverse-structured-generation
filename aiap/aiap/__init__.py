@@ -7,12 +7,12 @@ from .replay import (
     CandidateCertificate,
     CoveredObligation,
     FailureDiagnostic,
+    ReplayPayload,
     TokenAction,
     accepted_certificates,
     aggregate_certificates,
     coverage_ratios,
     replay_candidate,
-    ReplayPayload,
 )
 
 __all__ = [

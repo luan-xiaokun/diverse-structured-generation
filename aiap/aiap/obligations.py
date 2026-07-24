@@ -1,12 +1,13 @@
 """Typed DFA coverage obligations and deterministic catalog construction."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, Literal, TypeAlias
+from typing import Literal
 
 from regex_dfa_guide import DiverseGuideDFA
 
-ObligationKind: TypeAlias = Literal["state", "transition", "path"]
-ObligationMeaning: TypeAlias = int | tuple[int, int] | tuple[int, int, int]
+type ObligationKind = Literal["state", "transition", "path"]
+type ObligationMeaning = int | tuple[int, int] | tuple[int, int, int]
 
 
 @dataclass
@@ -22,12 +23,22 @@ class CoverageObligation:
     def __post_init__(self) -> None:
         if self.obligation_type == "state" and isinstance(self.obligation, int):
             self.state = self.obligation
-        elif self.obligation_type == "transition" and isinstance(self.obligation, tuple) and len(self.obligation) == 3:
+        elif (
+            self.obligation_type == "transition"
+            and isinstance(self.obligation, tuple)
+            and len(self.obligation) == 3
+        ):
             self.transition = self.obligation
-        elif self.obligation_type == "path" and isinstance(self.obligation, tuple) and len(self.obligation) == 2:
+        elif (
+            self.obligation_type == "path"
+            and isinstance(self.obligation, tuple)
+            and len(self.obligation) == 2
+        ):
             self.path = self.obligation
         else:
-            raise ValueError(f"Invalid {self.obligation_type} obligation: {self.obligation!r}")
+            raise ValueError(
+                f"Invalid {self.obligation_type} obligation: {self.obligation!r}"
+            )
 
     @property
     def kind(self) -> ObligationKind:
@@ -86,7 +97,9 @@ class ObligationCatalog:
                 transitions.add((source, byte, target))
                 paths.add((source, target))
         items = [CoverageObligation("state", state) for state in states]
-        items.extend(CoverageObligation("transition", value) for value in sorted(transitions))
+        items.extend(
+            CoverageObligation("transition", value) for value in sorted(transitions)
+        )
         items.extend(CoverageObligation("path", value) for value in sorted(paths))
         return cls(tuple(items))
 
@@ -103,4 +116,7 @@ class ObligationCatalog:
         raise KeyError(obligation_id)
 
     def as_json(self) -> list[dict[str, object]]:
-        return [{"id": item.obligation_id, "kind": item.kind, "meaning": item.raw_meaning} for item in self]
+        return [
+            {"id": item.obligation_id, "kind": item.kind, "meaning": item.raw_meaning}
+            for item in self
+        ]

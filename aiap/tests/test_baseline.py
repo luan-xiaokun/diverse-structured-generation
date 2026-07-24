@@ -18,10 +18,13 @@ def test_multi_byte_token_can_match_interior_byte(dfa_multi):
     assert witness == [10]
 
 
-def test_reachable_obligation_without_accepting_completion_returns_none(dfa_non_completable):
+def test_reachable_obligation_without_accepting_completion_returns_none(
+    dfa_non_completable,
+):
     initial = dfa_non_completable.get_initial_state()
     a_state = dfa_non_completable.get_next_token_state(initial, 10)
     b_state = dfa_non_completable.get_next_token_state(a_state, 20)
-    assert construct_one_witness(
-        dfa_non_completable, CoverageObligation("state", b_state)
-    ) is None
+    assert (
+        construct_one_witness(dfa_non_completable, CoverageObligation("state", b_state))
+        is None
+    )

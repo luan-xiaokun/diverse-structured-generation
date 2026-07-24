@@ -355,6 +355,33 @@ impl DfaIndex {
         }
         Ok(seq)
     }
+
+    pub fn get_byte_transition_sequence_from_state(
+        &self,
+        state: StateId,
+        token_id: TokenId,
+    ) -> Result<Vec<(Byte, StateId)>> {
+        // EOS is a valid token-level self-loop at final states, but it is not
+        // stored in the byte vocabulary. Validate that the transition exists
+        // and represent it as an empty byte sequence.
+        if token_id == self.eos_token_id {
+            self.get_next_token_state(state, token_id)?;
+            return Ok(vec![(0, state)]);
+        }
+
+        let token_str = self
+            .vocabulary
+            .get(&token_id)
+            .ok_or_else(|| Error::InvalidTokenId(token_id as usize))?;
+        let mut seq: Vec<(Byte, StateId)> = vec![(0, state)];
+        let mut current_state = state;
+        for byte_ref in token_str.as_bytes().iter() {
+            let next_state = self.get_next_byte_state(current_state, *byte_ref)?;
+            seq.push((*byte_ref, next_state));
+            current_state = next_state;
+        }
+        Ok(seq)
+    }
 }
 
 /// Per-token diversity counts returned by [`DiverseGuideDFA::compute_counts`].
@@ -503,6 +530,15 @@ impl DiverseGuideDFA {
 
     pub fn get_byte_transition_sequence(&self, string: &str) -> Result<Vec<(Byte, StateId)>> {
         self.index.get_byte_transition_sequence(string)
+    }
+
+    pub fn get_byte_transition_sequence_from_state(
+        &self,
+        state: StateId,
+        token_id: TokenId,
+    ) -> Result<Vec<(Byte, StateId)>> {
+        self.index
+            .get_byte_transition_sequence_from_state(state, token_id)
     }
 
     // --- Counter methods (mutable) ---
@@ -693,6 +729,12 @@ mod tests {
             .get_allowed_token_ids(final_state)
             .expect("allowed tokens from final");
         assert!(final_tokens.contains(&eos));
+
+        assert_eq!(
+            dfa.get_byte_transition_sequence_from_state(final_state, eos)
+                .expect("EOS should have an empty byte transition sequence"),
+            vec![(0, final_state)]
+        );
     }
 
     #[test]

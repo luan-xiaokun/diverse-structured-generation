@@ -10,7 +10,8 @@ def test_nested_package_imports_from_project_directory():
             sys.executable,
             "-c",
             "import importlib.util, aiap; spec=importlib.util.find_spec('aiap'); "
-            "assert spec and spec.origin and 'aiap/aiap/' in spec.origin.replace('\\\\', '/')",
+            "assert spec and spec.origin and 'aiap/aiap/' in"
+            " spec.origin.replace('\\\\', '/')",
         ],
         cwd=project_dir,
         check=True,
@@ -24,7 +25,9 @@ def test_catalog_is_deterministic_and_json_safe(dfa_multi):
     from aiap.obligations import ObligationCatalog
 
     catalog = ObligationCatalog.from_dfa(dfa_multi)
-    assert [item.obligation_id for item in catalog] == [item.obligation_id for item in ObligationCatalog.from_dfa(dfa_multi)]
+    assert [item.obligation_id for item in catalog] == [
+        item.obligation_id for item in ObligationCatalog.from_dfa(dfa_multi)
+    ]
     initial = dfa_multi.get_initial_state()
     assert catalog.by_id(f"state:{initial}").raw_meaning == initial
     transition = next(item for item in catalog if item.kind == "transition")

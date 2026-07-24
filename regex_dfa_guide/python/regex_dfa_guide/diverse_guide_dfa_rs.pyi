@@ -65,6 +65,12 @@ class DiverseGuideDFA:
         """Computes the counts for the given state."""
         ...
 
+    def get_byte_transition_sequence_from_state(
+        self, state: int, token_id: int
+    ) -> list[tuple[int, int]]:
+        """Return the byte transition sequence for a token from a given state."""
+        ...
+
     def __reduce__(self) -> tuple:
         """Pickle support."""
         ...
