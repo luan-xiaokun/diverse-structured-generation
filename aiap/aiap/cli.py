@@ -83,7 +83,23 @@ def run_case(
             cert.failure = mismatch
             cert.covered_obligations = []
         certs.append(cert)
-    obligations = catalog.items[:sample_num] if sample_num is not None else catalog.items
+    covered_ids = {
+        obligation_id
+        for certificate in certs
+        if certificate.aggregate_eligible and certificate.accepted
+        for obligation_id in certificate.covered_obligation_ids
+    }
+    # In AIAP terminology an obligation is only a currently unvisited DFA
+    # structure.  The catalog is merely the stable DFA structure universe used
+    # to resolve replay meanings; proposals must come from its uncovered part.
+    missing_obligations = [
+        item for item in catalog if item.obligation_id not in covered_ids
+    ]
+    obligations = (
+        missing_obligations[:sample_num]
+        if sample_num is not None
+        else missing_obligations
+    )
     for obligation in obligations:
         witness = construct_one_witness(dfa, obligation)
         if witness is None:
