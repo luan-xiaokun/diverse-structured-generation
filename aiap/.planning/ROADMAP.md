@@ -40,14 +40,24 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 01.1: Repair tokenizer vocabulary and byte-DFA contract (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
+**Requirements**: Contract repair for the existing Phase 1 baseline; no new milestone requirement IDs
 **Depends on:** Phase 1
-**Plans:** 0 plans
+**Plans:** 4 plans
+
+**Success Criteria** (what must be TRUE):
+
+  1. The public vocabulary API is bytes-only at version 0.3.0, reconstructs source UTF-8 bytes exactly for supported tokenizer families, and rejects string-valued vocabularies with an actionable `TypeError`.
+  2. Serialized DFA artifacts carry an explicit magic header and schema version, restore without tokenizer/network access, and strictly distinguish legacy, unsupported-schema, and corrupt inputs.
+  3. Synthetic boundary fixtures and the locked offline Qwen/CSS case demonstrate exact acceptance, ordered-state, transition, and path parity between token-driven and direct byte traversal.
+  4. Only structures missed by the selected baseline samples are obligations; byte-level-unreachable obligations remain diagnosed in aggregate JSON but do not consume `--obligation-num`, while JSONL remains limited to attempted witness certificates.
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 01.1 to break down)
+- [ ] 01.1-01-PLAN.md — Replace the tokenizer/PyO3/Rust boundary with exact bytes and rebuild the native extension.
+- [ ] 01.1-02-PLAN.md — Add the self-contained schema-1 artifact envelope and synchronize release 0.3.0.
+- [ ] 01.1-03-PLAN.md — Classify baseline-missed reachability and emit typed, population-correct witness outcomes.
+- [ ] 01.1-04-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
 
 ### Phase 2: Feasible Multi-Obligation Search
 
