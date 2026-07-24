@@ -55,6 +55,26 @@ def test_release_versions_are_consistent():
     assert rust_python_version == EXPECTED_VERSION
 
 
+def test_native_python_package_uses_dynamic_version_metadata():
+    native_python = _read_toml("regex_dfa_guide/pyproject.toml")
+
+    assert native_python["project"]["dynamic"] == ["version"]
+    assert "version" not in native_python["project"]
+
+
+def test_artifact_schema_dispatch_is_independent_of_package_version():
+    artifact_source = (ROOT / "regex_dfa_guide/src/diverse_guide_dfa.rs").read_text(
+        encoding="utf-8"
+    )
+    decode_body = artifact_source.split("pub fn decode_artifact", 1)[1].split(
+        "/// Immutable DFA structure", 1
+    )[0]
+
+    assert "ARTIFACT_SCHEMA_VERSION" in decode_body
+    assert "__version__" not in decode_body
+    assert "CARGO_PKG_VERSION" not in decode_body
+
+
 def test_release_license_metadata_is_consistent():
     project = _read_toml("pyproject.toml")
     rust_crate = _read_toml("regex_dfa_guide/Cargo.toml")
