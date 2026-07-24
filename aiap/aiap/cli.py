@@ -24,7 +24,9 @@ from .replay import (
 from .reporting import write_certificates_jsonl
 
 
-def _json_safe_aggregates(aggregates: dict[str, dict[Any, int]]) -> dict[str, list[dict[str, Any]]]:
+def _json_safe_aggregates(
+    aggregates: dict[str, dict[Any, int]],
+) -> dict[str, list[dict[str, Any]]]:
     """Encode tuple-keyed replay counters as portable JSON records."""
     return {
         name: [
@@ -224,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
         # internally to compute missing obligations, but are not emitted.
         write_certificates_jsonl(
             args.jsonl_path,
-            [certificate for certificate in certs if certificate.metadata.get("proposal")],
+            [
+                certificate
+                for certificate in certs
+                if certificate.metadata.get("proposal")
+            ],
         )
     return 0

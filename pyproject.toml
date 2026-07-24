@@ -52,6 +52,7 @@ Paper = "https://doi.org/10.1007/978-981-95-4213-0_2"
 dev = [
   "maturin>=1.7,<2.0",
   "poethepoet>=0.33.1",
+  "pre-commit>=4.6.1",
   "pytest>=9.0.2",
   "pytest-cov>=7.1.0",
   "ruff>=0.9.10",

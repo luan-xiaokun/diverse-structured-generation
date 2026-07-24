@@ -1,6 +1,7 @@
 import itertools
 
 import pytest
+from email_validator import EmailNotValidError, validate_email
 
 from tests.case_study_helpers import (
     get_selected_dataset_name,
@@ -8,12 +9,8 @@ from tests.case_study_helpers import (
     load_samples,
 )
 from tests.expected_metrics import EMAIL_EXPECTED_ERROR_COUNTS
-from email_validator import EmailNotValidError, validate_email
 
-
-EMAIL_VALIDATION_OPTIONS = tuple(
-    itertools.product([True, False], repeat=3)
-)
+EMAIL_VALIDATION_OPTIONS = tuple(itertools.product([True, False], repeat=3))
 
 
 def _email_option_id(options):

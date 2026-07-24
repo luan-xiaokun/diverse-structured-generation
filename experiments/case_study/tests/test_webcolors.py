@@ -8,7 +8,6 @@ from tests.case_study_helpers import (
 )
 from tests.expected_metrics import WEBCOLORS_EXPECTED_ERROR_COUNTS
 
-
 CONVERSION_FUNCTIONS = (
     webcolors.html5_parse_legacy_color,
     webcolors.html5_parse_simple_color,
