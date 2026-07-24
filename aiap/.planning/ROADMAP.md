@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
 **Requirements**: Contract repair for the existing Phase 1 baseline; no new milestone requirement IDs
 **Depends on:** Phase 1
-**Plans:** 4 plans
+**Plans:** 7 plans
 
 **Success Criteria** (what must be TRUE):
 
@@ -54,10 +54,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 
-- [ ] 01.1-01-PLAN.md — Replace the tokenizer/PyO3/Rust boundary with exact bytes and rebuild the native extension.
-- [ ] 01.1-02-PLAN.md — Add the self-contained schema-1 artifact envelope and synchronize release 0.3.0.
-- [ ] 01.1-03-PLAN.md — Classify baseline-missed reachability and emit typed, population-correct witness outcomes.
-- [ ] 01.1-04-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
+- [ ] 01.1-01-PLAN.md — Replace tokenizer vocabulary, PyO3, and Rust traversal with one exact bytes-only contract.
+- [ ] 01.1-02-PLAN.md — Convert repository callers and prove tests use the rebuilt native extension.
+- [ ] 01.1-03-PLAN.md — Add the strict self-contained schema-1 artifact envelope and failure taxonomy.
+- [ ] 01.1-04-PLAN.md — Synchronize release 0.3.0, regenerate locks, and install the final native source state.
+- [ ] 01.1-05-PLAN.md — Classify accepting token-action reachability and define bounded replay-backed outcomes.
+- [ ] 01.1-06-PLAN.md — Enforce missing/classify/select ordering and population-correct JSON, JSONL, and terminal reporting.
+- [ ] 01.1-07-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
 
 ### Phase 2: Feasible Multi-Obligation Search
 
