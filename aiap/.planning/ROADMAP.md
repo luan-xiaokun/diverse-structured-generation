@@ -53,13 +53,32 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Only structures missed by the selected baseline samples are obligations; byte-level-unreachable obligations remain diagnosed in aggregate JSON but do not consume `--obligation-num`, while JSONL remains limited to attempted witness certificates.
 
 Plans:
+**Wave 1**
 
 - [ ] 01.1-01-PLAN.md — Replace tokenizer vocabulary, PyO3, and Rust traversal with one exact bytes-only contract.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 01.1-02-PLAN.md — Convert repository callers and prove tests use the rebuilt native extension.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 01.1-03-PLAN.md — Add the strict self-contained schema-1 artifact envelope and failure taxonomy.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 01.1-04-PLAN.md — Synchronize release 0.3.0, regenerate locks, and install the final native source state.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 01.1-05-PLAN.md — Classify accepting token-action reachability and define bounded replay-backed outcomes.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 01.1-06-PLAN.md — Enforce missing/classify/select ordering and population-correct JSON, JSONL, and terminal reporting.
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 01.1-07-PLAN.md — Enforce hermetic synthetic and locked offline full-trace parity gates.
 
 ### Phase 2: Feasible Multi-Obligation Search
