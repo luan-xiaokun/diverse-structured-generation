@@ -40,6 +40,13 @@ def test_run_case_rejects_non_positive_sample_num():
         run_case(object(), object(), 0)
 
 
+def test_run_case_rejects_non_positive_obligation_num():
+    from aiap.cli import run_case
+
+    with pytest.raises(ValueError, match="obligation_num must be positive"):
+        run_case(object(), object(), None, 0)
+
+
 def test_json_safe_aggregates_encode_tuple_keys():
     from aiap.cli import _json_safe_aggregates
 

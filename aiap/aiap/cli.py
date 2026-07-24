@@ -65,10 +65,15 @@ def _load_tokenizer(case: CaseSpec):
 
 
 def run_case(
-    case: CaseSpec, tokenizer: Any, sample_num: int | None = None
+    case: CaseSpec,
+    tokenizer: Any,
+    sample_num: int | None = None,
+    obligation_num: int | None = None,
 ) -> tuple[dict[str, Any], list[CandidateCertificate]]:
     if sample_num is not None and sample_num <= 0:
         raise ValueError("sample_num must be positive")
+    if obligation_num is not None and obligation_num <= 0:
+        raise ValueError("obligation_num must be positive")
     dfa = DiverseRegexGuide(case.regex, tokenizer).dfa
     catalog = ObligationCatalog.from_dfa(dfa)
     certs = []
@@ -96,8 +101,8 @@ def run_case(
         item for item in catalog if item.obligation_id not in covered_ids
     ]
     obligations = (
-        missing_obligations[:sample_num]
-        if sample_num is not None
+        missing_obligations[:obligation_num]
+        if obligation_num is not None
         else missing_obligations
     )
     for obligation in obligations:
@@ -119,6 +124,7 @@ def run_case(
     aggregates = aggregate_certificates(certs)
     summary = {
         "sample_num": sample_num,
+        "obligation_num": obligation_num,
         "case": {
             "path": str(case.path),
             "grammar": case.grammar,
@@ -148,16 +154,28 @@ def main(argv: list[str] | None = None) -> int:
         "--sample-num",
         type=int,
         metavar="N",
-        help="bound source samples and baseline proposals for exploratory runs",
+        help="number of initial samples used to compute missing obligations",
+    )
+    parser.add_argument(
+        "--obligation-num",
+        "--ob-num",
+        dest="obligation_num",
+        type=int,
+        metavar="N",
+        help="maximum number of missing obligations used for witness generation",
     )
     parser.add_argument("--json", dest="json_path", type=Path)
     parser.add_argument("--jsonl", dest="jsonl_path", type=Path)
     args = parser.parse_args(argv)
     if args.sample_num is not None and args.sample_num <= 0:
         parser.error("--sample-num must be positive")
+    if args.obligation_num is not None and args.obligation_num <= 0:
+        parser.error("--obligation-num must be positive")
     try:
         case = load_case(args.case)
-        summary, certs = run_case(case, _load_tokenizer(case), args.sample_num)
+        summary, certs = run_case(
+            case, _load_tokenizer(case), args.sample_num, args.obligation_num
+        )
     except Exception as exc:
         parser.error(str(exc))
     print(f"Case: {summary['case']['grammar']} ({summary['case']['path']})")
