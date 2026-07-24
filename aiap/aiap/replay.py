@@ -5,11 +5,21 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from regex_dfa_guide import DiverseGuideDFA
 
+from .baseline import WitnessSearchResult
 from .obligations import CoverageObligation, ObligationCatalog
+from .reachability import ClassifiedObligation, ReachabilityEvidence
+
+type WitnessOutcome = Literal[
+    "success",
+    "byte_level_unreachable",
+    "search_limit",
+    "invalid_witness",
+    "internal_error",
+]
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,20 @@ class CoveredObligation:
         return self.meaning
 
 
+@dataclass(frozen=True)
+class WitnessResult:
+    """Typed evaluation of one requested witness obligation."""
+
+    obligation_id: str
+    obligation_kind: str
+    obligation_meaning: int | list[int]
+    outcome: WitnessOutcome
+    reachability: ReachabilityEvidence
+    failure_reason: str | None
+    max_expansions: int | None
+    expansions: int | None
+
+
 @dataclass
 class CandidateCertificate:
     """Complete replay evidence; failed certificates are never aggregate eligible."""
@@ -67,6 +91,7 @@ class CandidateCertificate:
     state_events: list[int] = field(default_factory=list)
     transition_events: list[tuple[int, int, int]] = field(default_factory=list)
     path_events: list[tuple[int, int]] = field(default_factory=list)
+    witness_result: WitnessResult | None = None
 
     @property
     def covered_obligation_ids(self) -> list[str]:
@@ -193,6 +218,75 @@ def replay_candidate(
         transition_events=transition_events,
         path_events=path_events,
     )
+
+
+def witness_result_from_attempt(
+    classified: ClassifiedObligation,
+    search: WitnessSearchResult | None,
+    certificate: CandidateCertificate | None,
+) -> WitnessResult:
+    """Map reachability, bounded search, and canonical replay to one outcome."""
+
+    target = classified.obligation
+    try:
+        if not classified.reachable:
+            return WitnessResult(
+                target.obligation_id,
+                target.kind,
+                target.raw_meaning,
+                "byte_level_unreachable",
+                classified.evidence,
+                "no_accepting_token_action",
+                None,
+                None,
+            )
+        if search is None:
+            raise RuntimeError("reachable target was not searched")
+        if search.limit_exhausted:
+            return WitnessResult(
+                target.obligation_id,
+                target.kind,
+                target.raw_meaning,
+                "search_limit",
+                classified.evidence,
+                search.failure_reason,
+                search.max_expansions,
+                search.expansions,
+            )
+        if search.token_ids is None:
+            raise RuntimeError(search.failure_reason or "search produced no witness")
+        if certificate is None:
+            raise RuntimeError("search witness was not canonically replayed")
+        outcome: WitnessOutcome = (
+            "success"
+            if (
+                certificate.accepted
+                and certificate.aggregate_eligible
+                and target.obligation_id in certificate.covered_obligation_ids
+            )
+            else "invalid_witness"
+        )
+        return WitnessResult(
+            target.obligation_id,
+            target.kind,
+            target.raw_meaning,
+            outcome,
+            classified.evidence,
+            None if outcome == "success" else "canonical_replay_missing_target",
+            search.max_expansions,
+            search.expansions,
+        )
+    except Exception as error:
+        return WitnessResult(
+            target.obligation_id,
+            target.kind,
+            target.raw_meaning,
+            "internal_error",
+            classified.evidence,
+            str(error),
+            None if search is None else search.max_expansions,
+            None if search is None else search.expansions,
+        )
 
 
 def aggregate_certificates(

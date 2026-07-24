@@ -7,12 +7,14 @@ from collections.abc import Iterable, Iterator
 from dataclasses import asdict
 from pathlib import Path
 
+from .reachability import ReachabilityEvidence
 from .replay import (
     ByteStep,
     CandidateCertificate,
     CoveredObligation,
     FailureDiagnostic,
     TokenAction,
+    WitnessResult,
 )
 
 SCHEMA_VERSION = 1
@@ -41,6 +43,20 @@ def certificate_from_dict(payload: dict[str, object]) -> CandidateCertificate:
     ]
     failure_payload = payload.get("failure")
     failure = FailureDiagnostic(**failure_payload) if failure_payload else None
+    witness_payload = payload.get("witness_result")
+    witness_result = None
+    if witness_payload:
+        reachability_payload = witness_payload["reachability"]
+        witness_result = WitnessResult(
+            obligation_id=str(witness_payload["obligation_id"]),
+            obligation_kind=str(witness_payload["obligation_kind"]),
+            obligation_meaning=witness_payload["obligation_meaning"],
+            outcome=witness_payload["outcome"],
+            reachability=ReachabilityEvidence(**reachability_payload),
+            failure_reason=witness_payload.get("failure_reason"),
+            max_expansions=witness_payload.get("max_expansions"),
+            expansions=witness_payload.get("expansions"),
+        )
     covered = [
         CoveredObligation(str(item["id"]), str(item["kind"]), item["meaning"])
         for item in payload.get("covered_obligations", [])
@@ -68,6 +84,7 @@ def certificate_from_dict(payload: dict[str, object]) -> CandidateCertificate:
             tuple(int(value) for value in item)
             for item in payload.get("path_events", [])
         ],
+        witness_result=witness_result,
     )
 
 

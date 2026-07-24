@@ -1,10 +1,22 @@
 """ICFEM-compatible single-obligation breadth-first witness construction."""
 
 from collections import Counter, deque
+from dataclasses import dataclass
 
 from regex_dfa_guide import DiverseGuideDFA
 
 from .obligations import CoverageObligation, ObligationCatalog
+
+
+@dataclass(frozen=True)
+class WitnessSearchResult:
+    """Deterministic single-target BFS output with its configured budget."""
+
+    token_ids: list[int] | None
+    expansions: int
+    max_expansions: int | None
+    limit_exhausted: bool
+    failure_reason: str | None
 
 
 def get_coverage_obligations(
@@ -42,9 +54,24 @@ def get_coverage_obligations(
 
 
 def construct_one_witness(
-    dfa: DiverseGuideDFA, obligation: CoverageObligation
-) -> list[int] | None:
+    dfa: DiverseGuideDFA,
+    obligation: CoverageObligation,
+    *,
+    max_expansions: int | None = None,
+) -> WitnessSearchResult:
     """Find the shortest accepted token sequence meeting one obligation."""
+    if max_expansions is not None and max_expansions < 0:
+        raise ValueError("max_expansions must be non-negative or None")
+
+    expansions = 0
+
+    def consume_expansion() -> bool:
+        nonlocal expansions
+        if max_expansions is not None and expansions >= max_expansions:
+            return False
+        expansions += 1
+        return True
+
     initial_state = dfa.get_initial_state()
     queue = deque([(initial_state, [])])
     visited_states = {initial_state}
@@ -53,8 +80,12 @@ def construct_one_witness(
         matched = (initial_state, [])
 
     while queue and matched is None:
+        if not consume_expansion():
+            return WitnessSearchResult(
+                None, expansions, max_expansions, True, "expansion_limit"
+            )
         state, token_ids = queue.popleft()
-        for token_id in dfa.get_allowed_token_ids(state):
+        for token_id in sorted(dfa.get_allowed_token_ids(state)):
             try:
                 transitions = dfa.get_byte_transition_sequence_from_state(
                     state, token_id
@@ -82,17 +113,31 @@ def construct_one_witness(
                 queue.append((next_state, next_token_ids))
 
     if matched is None:
-        return None
+        return WitnessSearchResult(
+            None, expansions, max_expansions, False, "no_matching_obligation"
+        )
     middle_state, prefix_token_ids = matched
     queue = deque([(middle_state, [])])
     visited_states = {middle_state}
     while queue:
+        if not consume_expansion():
+            return WitnessSearchResult(
+                None, expansions, max_expansions, True, "expansion_limit"
+            )
         state, suffix_token_ids = queue.popleft()
         if dfa.is_final_state(state):
-            return prefix_token_ids + suffix_token_ids
-        for token_id in dfa.get_allowed_token_ids(state):
+            return WitnessSearchResult(
+                prefix_token_ids + suffix_token_ids,
+                expansions,
+                max_expansions,
+                False,
+                None,
+            )
+        for token_id in sorted(dfa.get_allowed_token_ids(state)):
             next_state = dfa.get_next_token_state(state, token_id)
             if next_state not in visited_states:
                 visited_states.add(next_state)
                 queue.append((next_state, suffix_token_ids + [token_id]))
-    return None
+    return WitnessSearchResult(
+        None, expansions, max_expansions, False, "no_accepting_completion"
+    )
