@@ -1,6 +1,6 @@
 # DiverseGuide
 
-![Version](https://img.shields.io/badge/version-v0.2.0-blue)
+![Version](https://img.shields.io/badge/version-v0.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **OSP title:** DiverseGuide: Automata-Based Steering for Diverse Structured Generation
@@ -309,8 +309,9 @@ from diverse_guide import DiverseGuide, baseline_regex
 assert callable(DiverseGuide)
 assert callable(baseline_regex)
 
-# Rust extension check
-vocab = {0: "<eos>", 1: "a", 2: "b", 3: "ab"}
+# Rust extension check: token vocabulary values are exact bytes.  EOS is kept
+# outside the vocabulary because it is a zero-byte token action.
+vocab: dict[int, bytes] = {1: b"a", 2: b"b", 3: b"ab"}
 dfa = DiverseGuideDFA(r"(?:ab)$", 0, vocab)
 s0 = dfa.get_initial_state()
 allowed = set(dfa.get_allowed_token_ids(s0))

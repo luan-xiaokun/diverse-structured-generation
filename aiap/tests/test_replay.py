@@ -1,3 +1,8 @@
+import sys
+from importlib.metadata import version
+from pathlib import Path
+
+import regex_dfa_guide.regex_dfa_guide_rs as native_extension
 from aiap.obligations import ObligationCatalog
 from aiap.replay import aggregate_certificates, replay_candidate
 from aiap.reporting import read_certificates_jsonl, write_certificates_jsonl
@@ -5,7 +10,21 @@ from regex_dfa_guide import DiverseGuideDFA
 
 
 def make_dfa():
-    return DiverseGuideDFA("(?:ab)?$", 99, {1: "a", 2: "b", 3: "ab"})
+    return DiverseGuideDFA("(?:ab)?$", 99, {1: b"a", 2: b"b", 3: b"ab"})
+
+
+def test_active_native_extension_runs_bytes_only_trace():
+    extension_path = Path(native_extension.__file__).resolve()
+    environment_root = Path(sys.prefix).resolve()
+    assert version("regex-dfa-guide") == "0.3.0"
+    assert extension_path.is_relative_to(environment_root), (
+        extension_path,
+        environment_root,
+    )
+
+    dfa = DiverseGuideDFA("a", 0, {1: b"a"})
+    trace = dfa.get_byte_transition_sequence_from_state(dfa.get_initial_state(), 1)
+    assert [int(step[0]) for step in trace[1:]] == [97]
 
 
 def test_empty_input_credits_initial_state_once():

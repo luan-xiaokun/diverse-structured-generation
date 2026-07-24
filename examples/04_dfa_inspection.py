@@ -17,15 +17,15 @@ import pickle
 
 from regex_dfa_guide import DiverseGuideDFA
 
-# Minimal mock vocabulary: a small set of tokens for illustration
-VOCAB: dict[int, str] = {
-    0: "a",
-    1: "b",
-    2: "c",
-    3: "ab",
-    4: "bc",
-    5: "abc",
-    999: "<eos>",  # EOS token
+# Minimal mock vocabulary: exact token bytes for illustration.  EOS remains
+# outside this mapping because it is represented as a zero-byte token action.
+VOCAB: dict[int, bytes] = {
+    0: b"a",
+    1: b"b",
+    2: b"c",
+    3: b"ab",
+    4: b"bc",
+    5: b"abc",
 }
 
 # Regex: one or more characters from {a, b, c}
@@ -48,7 +48,7 @@ def main():
     print("\nAllowed tokens from initial state:")
     allowed = dfa.get_allowed_token_ids(init)
     for tid in sorted(allowed):
-        token_str = VOCAB[tid]
+        token_str = VOCAB[tid].decode("utf-8")
         next_state = dfa.get_next_token_state(init, tid)
         print(f"  token_id={tid:3d}  token={token_str!r:6s}  → state {next_state}")
 
