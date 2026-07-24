@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Baseline Replay Foundation
 status: complete
-stopped_at: Completed 01-baseline-replay-foundation-03-PLAN.md
-last_updated: "2026-07-23T12:50:00Z"
+stopped_at: Phase 01.1 context gathered
+last_updated: "2026-07-24T04:05:55.233Z"
 last_activity: 2026-07-23
-last_activity_desc: Completed Phase 1 implementation and verification; real-case parity awaits locked tokenizer provisioning.
+last_activity_desc: Completed Phase 1 implementation and verification.
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 1
   total_plans: 3
   completed_plans: 3
-  percent: 20
+  percent: 17
 ---
 
 # Project State
@@ -78,6 +78,10 @@ None yet.
 - Phase 4 needs a pinned model/tokenizer and a disclosed length-matched naturalness protocol.
 - Phase 5 must freeze the development/held-out case-study split before final comparisons.
 
+### Roadmap Evolution
+
+- Phase 01.1 inserted after Phase 1: Repair tokenizer vocabulary and byte-DFA contract (URGENT)
+
 ## Deferred Items
 
 | Category | Item | Status | Deferred At |
@@ -87,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-23T12:13:48.577Z
-Stopped at: Completed 01-baseline-replay-foundation-01-PLAN.md
-Resume file: None
+Last session: 2026-07-24T04:05:55.228Z
+Stopped at: Phase 01.1 context gathered
+Resume file: .planning/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-CONTEXT.md
