@@ -24,6 +24,20 @@ from .replay import (
 from .reporting import write_certificates_jsonl
 
 
+def _json_safe_aggregates(aggregates: dict[str, dict[Any, int]]) -> dict[str, list[dict[str, Any]]]:
+    """Encode tuple-keyed replay counters as portable JSON records."""
+    return {
+        name: [
+            {
+                "key": list(key) if isinstance(key, tuple) else key,
+                "count": count,
+            }
+            for key, count in counts.items()
+        ]
+        for name, counts in aggregates.items()
+    }
+
+
 def adapt_source(
     tokenizer: Any, source_text: str
 ) -> tuple[list[int], str, FailureDiagnostic | None]:
@@ -103,7 +117,7 @@ def run_case(
             "failed": sum(not (c.aggregate_eligible and c.accepted) for c in certs),
         },
         "coverage": coverage_ratios(catalog, aggregates),
-        "aggregates": aggregates,
+        "aggregates": _json_safe_aggregates(aggregates),
         "parity_diagnostics": [c.failure.category for c in certs if c.failure],
     }
     return summary, certs

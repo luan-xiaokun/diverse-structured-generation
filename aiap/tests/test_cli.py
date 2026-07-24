@@ -38,3 +38,10 @@ def test_run_case_rejects_non_positive_sample_num():
 
     with pytest.raises(ValueError, match="sample_num must be positive"):
         run_case(object(), object(), 0)
+
+
+def test_json_safe_aggregates_encode_tuple_keys():
+    from aiap.cli import _json_safe_aggregates
+
+    payload = _json_safe_aggregates({"path_counts": {(1, 2): 3}})
+    assert payload == {"path_counts": [{"key": [1, 2], "count": 3}]}
