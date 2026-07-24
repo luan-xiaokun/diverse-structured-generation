@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Baseline Replay Foundation
+current_phase: 01.1
+current_phase_name: Repair tokenizer vocabulary and byte-DFA contract
 status: executing
-stopped_at: Phase 01.1 context gathered
-last_updated: "2026-07-24T05:52:17.911Z"
-last_activity: 2026-07-23
-last_activity_desc: Completed Phase 1 implementation and verification.
+stopped_at: Phase 01.1 planning complete
+last_updated: "2026-07-24T05:54:14.809Z"
+last_activity: 2026-07-24
+last_activity_desc: Phase 01.1 planning complete — 7 plans ready
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 3
+  total_plans: 10
   completed_plans: 3
   percent: 17
 ---
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-23)
 
 **Core value:** 在保持 DFA 约束正确性的前提下，以少量、自然且互补的测试样本显著提高结构化生成输出的 DFA 覆盖。
-**Current focus:** Phase 1 — Baseline Replay Foundation
+**Current focus:** Phase 01.1 — Repair tokenizer vocabulary and byte-DFA contract
 
 ## Current Position
 
-Phase: 1 of 5 (Baseline Replay Foundation)
-Plan: 3 of 3
+Phase: 01.1 (Repair tokenizer vocabulary and byte-DFA contract) — PLANNED
+Plan: 1 of 7
 Status: Ready to execute
-Last activity: 2026-07-23 — Completed Phase 1 implementation and verification.
+Last activity: 2026-07-24 — Phase 01.1 planning complete
 
-Progress: [██░░░░░░░░] 20%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
