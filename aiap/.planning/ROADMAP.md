@@ -38,6 +38,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 01-02-PLAN.md
 - [x] 01-03-PLAN.md
 
+### Phase 01.1: Repair tokenizer vocabulary and byte-DFA contract (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 1
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 01.1 to break down)
+
 ### Phase 2: Feasible Multi-Obligation Search
 
 **Goal**: Researchers can generate trace-certified witnesses that jointly cover feasible obligations and quantify the bounded search's approximation behavior without claiming global optimality.
