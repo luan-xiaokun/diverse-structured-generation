@@ -5,37 +5,9 @@ import pytest
 from diverse_guide.vocab import (
     build_reduced_vocab,
     build_token_id_map,
-    byte_symbol,
     gpt2_bytes_to_unicode,
     gpt2_unicode_to_bytes,
 )
-
-# ---------------------------------------------------------------------------
-# byte_symbol
-# ---------------------------------------------------------------------------
-
-
-def test_byte_symbol_ascii_printable():
-    assert byte_symbol(ord("a")) == "a"
-    assert byte_symbol(ord("z")) == "z"
-    assert byte_symbol(ord("0")) == "0"
-
-
-def test_byte_symbol_high_byte():
-    # Bytes >= 0x80 are encoded as \x00XX
-    result = byte_symbol(0x80)
-    assert result == "\x0080"
-
-    result = byte_symbol(0xFF)
-    assert result == "\x00FF"
-
-
-def test_byte_symbol_boundary():
-    # 0x7F is still ASCII (< 0x80)
-    assert byte_symbol(0x7F) == chr(0x7F)
-    # 0x80 crosses into the high-byte encoding
-    assert byte_symbol(0x80).startswith("\x00")
-
 
 # ---------------------------------------------------------------------------
 # gpt2 byte/unicode roundtrip
@@ -57,10 +29,10 @@ def test_gpt2_bytes_to_unicode_is_bijection():
 
 def test_build_reduced_vocab_basic(mock_tokenizer):
     vocab = build_reduced_vocab(mock_tokenizer)
-    assert "a" in vocab
-    assert "b" in vocab
-    assert 10 in vocab["a"]
-    assert 20 in vocab["b"]
+    assert b"a" in vocab
+    assert b"b" in vocab
+    assert 10 in vocab[b"a"]
+    assert 20 in vocab[b"b"]
 
 
 def test_build_reduced_vocab_excludes_special_tokens(mock_tokenizer):
@@ -72,7 +44,7 @@ def test_build_reduced_vocab_excludes_special_tokens(mock_tokenizer):
 
 def test_build_reduced_vocab_no_empty_strings(mock_tokenizer):
     vocab = build_reduced_vocab(mock_tokenizer)
-    assert "" not in vocab
+    assert b"" not in vocab
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +54,8 @@ def test_build_reduced_vocab_no_empty_strings(mock_tokenizer):
 
 def test_build_token_id_map_basic(mock_tokenizer):
     token_map = build_token_id_map(mock_tokenizer)
-    assert token_map[10] == "a"
-    assert token_map[20] == "b"
+    assert token_map[10] == b"a"
+    assert token_map[20] == b"b"
 
 
 def test_build_token_id_map_excludes_eos(mock_tokenizer):
@@ -91,10 +63,10 @@ def test_build_token_id_map_excludes_eos(mock_tokenizer):
     assert 99 not in token_map
 
 
-def test_build_token_id_map_values_are_strings(mock_tokenizer):
+def test_build_token_id_map_values_are_bytes(mock_tokenizer):
     token_map = build_token_id_map(mock_tokenizer)
     for v in token_map.values():
-        assert isinstance(v, str)
+        assert isinstance(v, bytes)
 
 
 class _VocabTokenizer:
@@ -116,8 +88,12 @@ class _VocabTokenizer:
         token = tokens[0]
         if isinstance(token, bytes):
             return token.decode("utf-8", errors="replace")
-        if token in {"<0x80>", "ab", "☃"}:
+        if token in {"<0x80>", "ab", "Aab", "☃"}:
             return "\ufffd"
+        if token == "replacement":
+            return "\ufffd"
+        if token == "snowman":
+            return "☃"
         return str(token)
 
     def __hash__(self):
@@ -127,12 +103,39 @@ class _VocabTokenizer:
         return self is other
 
 
-def test_build_reduced_vocab_bytes_and_replacement_decoding_paths():
-    tok = _VocabTokenizer({b"\x80": 1, "<0x80>": 2, "ab": 3, "<eos>": 99})
-    vocab = build_reduced_vocab(tok)
-    assert any(tid == 1 for tids in vocab.values() for tid in tids)
-    assert any(tid == 2 for tids in vocab.values() for tid in tids)
-    assert any(tid == 3 for tids in vocab.values() for tid in tids)
+def test_build_reduced_vocab_recovers_exact_bytes_for_synthetic_token_forms():
+    inverse = gpt2_bytes_to_unicode()
+    high_1 = inverse[0xE1]
+    high_2 = inverse[0x9A]
+    high_3 = inverse[0x80]
+    tok = _VocabTokenizer(
+        {
+            "ascii": 1,
+            "snowman": 2,
+            high_1: 3,
+            high_2 + high_3: 4,
+            "A" + high_1: 5,
+            "<0x80>": 6,
+            "replacement": 7,
+            b"\xff": 8,
+            "<eos>": 99,
+        }
+    )
+
+    token_map = build_token_id_map(tok)
+
+    assert token_map == {
+        1: b"ascii",
+        2: "☃".encode(),
+        3: b"\xe1",
+        4: b"\x9a\x80",
+        5: b"A\xe1",
+        6: b"\x80",
+        7: b"\xef\xbf\xbd",
+        8: b"\xff",
+    }
+    assert b"" not in build_reduced_vocab(tok)
+    assert b"".join(token_map[token_id] for token_id in (3, 4)) == "\u1680".encode()
 
 
 def test_build_reduced_vocab_runtime_error_for_unmappable_replacement():
