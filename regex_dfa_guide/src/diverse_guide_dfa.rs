@@ -625,7 +625,10 @@ mod tests {
     use bincode::config;
     use rustc_hash::FxHashMap as Map;
 
-    use super::{DiverseGuideDFA, Error, TokenId};
+    use super::{
+        decode_artifact, encode_artifact, validate_artifact_input_len, DiverseGuideDFA, Error,
+        TokenId, ARTIFACT_DECODE_LIMIT_BYTES, ARTIFACT_MAGIC, ARTIFACT_SCHEMA_VERSION,
+    };
 
     fn toy_vocab(eos: TokenId) -> Map<TokenId, Vec<u8>> {
         let mut vocab = Map::default();
@@ -797,6 +800,55 @@ mod tests {
         let (decoded, _): (DiverseGuideDFA, usize) =
             bincode::decode_from_slice(&bytes, config::standard()).expect("decoding must succeed");
         assert_eq!(decoded, dfa);
+    }
+
+    #[test]
+    fn artifact_length_guard_has_an_exact_256_mib_boundary() {
+        assert!(validate_artifact_input_len(ARTIFACT_DECODE_LIMIT_BYTES as usize).is_ok());
+        assert!(matches!(
+            validate_artifact_input_len(ARTIFACT_DECODE_LIMIT_BYTES as usize + 1),
+            Err(Error::CorruptArtifact(_))
+        ));
+    }
+
+    #[test]
+    fn artifact_codec_enforces_schema_and_full_payload_consumption() {
+        let dfa = toy_dfa();
+        let artifact = encode_artifact(&dfa).expect("artifact encoding must succeed");
+        assert_eq!(&artifact[..8], ARTIFACT_MAGIC);
+        assert_eq!(
+            u16::from_le_bytes([artifact[8], artifact[9]]),
+            ARTIFACT_SCHEMA_VERSION
+        );
+        assert_eq!(decode_artifact(&artifact).expect("artifact decoding must succeed"), dfa);
+
+        let mut unknown_schema = artifact.clone();
+        unknown_schema[8..10].copy_from_slice(&2_u16.to_le_bytes());
+        assert!(matches!(
+            decode_artifact(&unknown_schema),
+            Err(Error::UnsupportedArtifactSchema(2))
+        ));
+
+        let mut trailing = artifact;
+        trailing.push(0);
+        assert!(matches!(
+            decode_artifact(&trailing),
+            Err(Error::CorruptArtifact(_))
+        ));
+    }
+
+    #[test]
+    fn compact_forged_collection_length_hits_the_decode_budget() {
+        let mut artifact = Vec::from(*ARTIFACT_MAGIC);
+        artifact.extend_from_slice(&ARTIFACT_SCHEMA_VERSION.to_le_bytes());
+        // DfaIndex starts with eos_token_id, initial_state, then final_states.
+        artifact.extend_from_slice(&[0, 0, 252]);
+        artifact.extend_from_slice(&((ARTIFACT_DECODE_LIMIT_BYTES as u32) + 1).to_le_bytes());
+
+        assert!(matches!(
+            decode_artifact(&artifact),
+            Err(Error::CorruptArtifact(_))
+        ));
     }
 
     #[test]

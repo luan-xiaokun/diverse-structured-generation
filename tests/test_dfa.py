@@ -1,6 +1,7 @@
 """Tests for DiverseGuideDFA (Rust extension)."""
 
 import pickle
+import socket
 
 import pytest
 
@@ -284,3 +285,99 @@ def test_pickle_roundtrip_with_counters(dfa_multi):
     data = pickle.dumps(dfa_multi)
     restored = pickle.loads(data)
     assert restored == dfa_multi
+
+
+# ---------------------------------------------------------------------------
+# Strict schema-1 artifact boundary
+# ---------------------------------------------------------------------------
+
+
+def _artifact_bytes(dfa):
+    _restore, args = dfa.__reduce__()
+    return args[0]
+
+
+def _assert_artifact_error(payload, prefix):
+    with pytest.raises(ValueError, match=rf"^{prefix}"):
+        DiverseGuideDFA.from_binary(payload)
+
+
+def test_reduce_uses_schema_1_artifact_envelope(dfa_multi):
+    payload = _artifact_bytes(dfa_multi)
+
+    assert payload[:8] == b"RDGDFA\x00\x00"
+    assert payload[8:10] == (1).to_bytes(2, "little")
+
+
+@pytest.mark.parametrize("payload", [b"", b"not-an-artifact"])
+def test_from_binary_rejects_legacy_artifacts(payload):
+    _assert_artifact_error(payload, "legacy_artifact")
+
+
+def test_from_binary_rejects_unknown_schema(dfa_multi):
+    payload = bytearray(_artifact_bytes(dfa_multi))
+    payload[8:10] = (2).to_bytes(2, "little")
+
+    _assert_artifact_error(bytes(payload), "unsupported_schema: 2")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"RDGDFA\x00\x00",
+        b"RDGDFA\x00\x00\x01",
+        b"RDGDFA\x00\x00\x01\x00",
+        b"RDGDFA\x00\x00\x01\x00\xff",
+    ],
+)
+def test_from_binary_rejects_truncated_or_malformed_artifacts(payload):
+    _assert_artifact_error(payload, "corrupt_artifact")
+
+
+def test_from_binary_rejects_trailing_bytes(dfa_multi):
+    _assert_artifact_error(_artifact_bytes(dfa_multi) + b"\x00", "corrupt_artifact")
+
+
+def test_from_binary_restores_behavior_without_network_access(dfa_multi, monkeypatch):
+    initial = dfa_multi.get_initial_state()
+    dfa_multi.update_path_counter("ab")
+    dfa_multi.update_local_state_counter(initial, 10)
+    expected = {
+        "states": sorted(dfa_multi.get_states()),
+        "transitions": dfa_multi.get_transitions(),
+        "allowed": {
+            state: sorted(dfa_multi.get_allowed_token_ids(state))
+            for state in dfa_multi.get_states()
+        },
+        "direct_trace": dfa_multi.get_byte_transition_sequence("ab"),
+        "token_trace": dfa_multi.get_byte_transition_sequence_from_state(initial, 10),
+        "acceptance": dfa_multi.is_final_state(
+            dfa_multi.get_next_token_state(initial, 10)
+        ),
+        "counts": dfa_multi.compute_counts(initial),
+    }
+    payload = _artifact_bytes(dfa_multi)
+    del dfa_multi
+
+    def fail_if_network_used(*_args, **_kwargs):
+        raise AssertionError("artifact restore must not access the network")
+
+    monkeypatch.setattr(socket, "create_connection", fail_if_network_used)
+    restored = DiverseGuideDFA.from_binary(payload)
+
+    assert sorted(restored.get_states()) == expected["states"]
+    assert restored.get_transitions() == expected["transitions"]
+    assert {
+        state: sorted(restored.get_allowed_token_ids(state))
+        for state in restored.get_states()
+    } == expected["allowed"]
+    assert restored.get_byte_transition_sequence("ab") == expected["direct_trace"]
+    assert (
+        restored.get_byte_transition_sequence_from_state(initial, 10)
+        == expected["token_trace"]
+    )
+    assert (
+        restored.is_final_state(restored.get_next_token_state(initial, 10))
+        == expected["acceptance"]
+    )
+    assert restored.compute_counts(initial) == expected["counts"]
