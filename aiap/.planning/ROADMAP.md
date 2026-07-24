@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
 **Requirements**: BASE-01, BASE-02
 **Depends on:** Phase 1
-**Plans:** 7 plans
+**Plans:** 2/7 plans executed
 
 **Success Criteria** (what must be TRUE):
 
@@ -55,11 +55,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 01.1-01-PLAN.md — Replace tokenizer vocabulary, PyO3, and Rust traversal with one exact bytes-only contract.
+- [x] 01.1-01-PLAN.md — Replace tokenizer vocabulary, PyO3, and Rust traversal with one exact bytes-only contract.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01.1-02-PLAN.md — Convert repository callers and prove tests use the rebuilt native extension.
+- [x] 01.1-02-PLAN.md — Convert repository callers and prove tests use the rebuilt native extension.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
