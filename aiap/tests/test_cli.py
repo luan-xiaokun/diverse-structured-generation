@@ -69,3 +69,21 @@ def test_jsonl_output_is_reserved_for_generated_proposals(tmp_path):
         output, [c for c in certificates if c.metadata.get("proposal")]
     )
     assert output.read_text(encoding="utf-8").count("\n") == 1
+
+
+def test_failed_proposal_certificate_is_explicit():
+    from aiap.cli import _failed_proposal_certificate
+
+    class Dfa:
+        def get_initial_state(self):
+            return 7
+
+    class Obligation:
+        obligation_id = "state:9"
+        kind = "state"
+        raw_meaning = 9
+
+    certificate = _failed_proposal_certificate(Dfa(), Obligation())
+    assert certificate.metadata["proposal"] == "state:9"
+    assert certificate.failure.category == "no_accepting_witness"
+    assert not certificate.aggregate_eligible

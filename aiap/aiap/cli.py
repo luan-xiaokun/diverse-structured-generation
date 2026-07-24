@@ -38,6 +38,30 @@ def _json_safe_aggregates(aggregates: dict[str, dict[Any, int]]) -> dict[str, li
     }
 
 
+def _failed_proposal_certificate(dfa: Any, obligation: Any) -> CandidateCertificate:
+    """Retain an obligation whose BFS found no accepting witness."""
+    return CandidateCertificate(
+        token_ids=[],
+        initial_state=int(dfa.get_initial_state()),
+        final_state=None,
+        token_actions=[],
+        accepted=False,
+        aggregate_eligible=False,
+        failure=FailureDiagnostic(
+            "no_accepting_witness",
+            f"BFS found no accepting witness for {obligation.obligation_id}",
+        ),
+        metadata={
+            "proposal": obligation.obligation_id,
+            "obligation": {
+                "id": obligation.obligation_id,
+                "kind": obligation.kind,
+                "meaning": obligation.raw_meaning,
+            },
+        },
+    )
+
+
 def adapt_source(
     tokenizer: Any, source_text: str
 ) -> tuple[list[int], str, FailureDiagnostic | None]:
@@ -108,6 +132,7 @@ def run_case(
     for obligation in obligations:
         witness = construct_one_witness(dfa, obligation)
         if witness is None:
+            certs.append(_failed_proposal_certificate(dfa, obligation))
             continue
         decoded = tokenizer.decode(
             witness, skip_special_tokens=False, clean_up_tokenization_spaces=False
