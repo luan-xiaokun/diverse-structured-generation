@@ -38,7 +38,7 @@ def mock_tokenizer():
 @pytest.fixture
 def vocab_ab():
     """Minimal vocabulary: token 10='a', token 20='b', eos=99."""
-    return {10: "a", 20: "b"}
+    return {10: b"a", 20: b"b"}
 
 
 @pytest.fixture

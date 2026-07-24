@@ -28,14 +28,14 @@ pub struct DfaIndex {
     token_transitions: HashMap<StateId, HashMap<TokenId, StateId>>,
     token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
     allowed_token_ids: HashMap<StateId, Vec<TokenId>>,
-    vocabulary: HashMap<TokenId, String>,
+    vocabulary: HashMap<TokenId, Vec<u8>>,
 }
 
 impl DfaIndex {
     pub fn new(
         regex: &str,
         eos_token_id: TokenId,
-        vocabulary: HashMap<TokenId, String>,
+        vocabulary: HashMap<TokenId, Vec<u8>>,
     ) -> Result<Self> {
         let dfa = DFA::builder()
             .configure(DFA::config().minimize(true))
@@ -60,13 +60,13 @@ impl DfaIndex {
         let mut token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>> =
             HashMap::default();
         for &current_state in &states {
-            'token_loop: for (token_id, token_str) in vocabulary.iter() {
+            'token_loop: for (token_id, token_bytes) in vocabulary.iter() {
                 if *token_id == eos_token_id {
                     continue;
                 }
                 let mut next_state = current_state;
                 let mut state_path = vec![current_state];
-                for byte in token_str.as_bytes() {
+                for byte in token_bytes {
                     next_state = match transitions.get(&next_state) {
                         Some(trans) => match trans.get(&byte) {
                             Some(state) => *state,
@@ -320,13 +320,13 @@ impl DfaIndex {
         if token_id == self.eos_token_id {
             state_seq.push(self.get_next_token_state(state, token_id)?);
         } else {
-            let token_str = self
+            let token_bytes = self
                 .vocabulary
                 .get(&token_id)
                 .ok_or_else(|| Error::InvalidTokenId(token_id as usize))?;
             let mut current_state = state;
-            for byte_ref in token_str.as_bytes().iter() {
-                let next_state = self.get_next_byte_state(current_state, *byte_ref)?;
+            for byte in token_bytes {
+                let next_state = self.get_next_byte_state(current_state, *byte)?;
                 state_seq.push(next_state);
                 current_state = next_state;
             }
@@ -369,15 +369,15 @@ impl DfaIndex {
             return Ok(vec![(0, state)]);
         }
 
-        let token_str = self
+        let token_bytes = self
             .vocabulary
             .get(&token_id)
             .ok_or_else(|| Error::InvalidTokenId(token_id as usize))?;
         let mut seq: Vec<(Byte, StateId)> = vec![(0, state)];
         let mut current_state = state;
-        for byte_ref in token_str.as_bytes().iter() {
-            let next_state = self.get_next_byte_state(current_state, *byte_ref)?;
-            seq.push((*byte_ref, next_state));
+        for byte in token_bytes {
+            let next_state = self.get_next_byte_state(current_state, *byte)?;
+            seq.push((*byte, next_state));
             current_state = next_state;
         }
         Ok(seq)
@@ -451,7 +451,7 @@ impl DiverseGuideDFA {
     pub fn new(
         regex: &str,
         eos_token_id: TokenId,
-        vocabulary: HashMap<TokenId, String>,
+        vocabulary: HashMap<TokenId, Vec<u8>>,
     ) -> Result<Self> {
         Ok(Self {
             index: Arc::new(DfaIndex::new(regex, eos_token_id, vocabulary)?),
@@ -627,13 +627,13 @@ mod tests {
 
     use super::{DiverseGuideDFA, Error, TokenId};
 
-    fn toy_vocab(eos: TokenId) -> Map<TokenId, String> {
+    fn toy_vocab(eos: TokenId) -> Map<TokenId, Vec<u8>> {
         let mut vocab = Map::default();
-        vocab.insert(eos, "<eos>".to_string());
-        vocab.insert(1, "a".to_string());
-        vocab.insert(2, "b".to_string());
-        vocab.insert(3, "ab".to_string());
-        vocab.insert(4, "x".to_string());
+        vocab.insert(eos, b"<eos>".to_vec());
+        vocab.insert(1, b"a".to_vec());
+        vocab.insert(2, b"b".to_vec());
+        vocab.insert(3, b"ab".to_vec());
+        vocab.insert(4, b"x".to_vec());
         vocab
     }
 

@@ -3,9 +3,9 @@
 use std::sync::{Arc, PoisonError, RwLock};
 
 use bincode::config;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 use rustc_hash::FxHashMap as HashMap;
 
 use crate::diverse_guide_dfa::DiverseGuideDFA;
@@ -22,10 +22,29 @@ fn map_poison_error_to_pyerr<G>(_: PoisonError<G>) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("RwLock poisoned")
 }
 
+fn extract_bytes_vocabulary(vocabulary: &Bound<'_, PyDict>) -> PyResult<HashMap<u64, Vec<u8>>> {
+    let mut extracted = HashMap::default();
+    for (key, value) in vocabulary.iter() {
+        let token_id: u64 = key.extract()?;
+        let bytes = match value.cast::<PyBytes>() {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let actual_type = value.get_type().name()?.to_string_lossy().into_owned();
+                return Err(PyTypeError::new_err(format!(
+                    "Vocabulary value for token ID {token_id} must be bytes, got {actual_type}"
+                )));
+            }
+        };
+        extracted.insert(token_id, bytes.as_bytes().to_vec());
+    }
+    Ok(extracted)
+}
+
 #[pymethods]
 impl PyDiverseGuideDFA {
     #[new]
-    fn __new__(regex: &str, eos_token_id: u64, vocabulary: HashMap<u64, String>) -> PyResult<Self> {
+    fn __new__(regex: &str, eos_token_id: u64, vocabulary: Bound<'_, PyDict>) -> PyResult<Self> {
+        let vocabulary = extract_bytes_vocabulary(&vocabulary)?;
         DiverseGuideDFA::new(regex, eos_token_id, vocabulary)
             .map(|x| PyDiverseGuideDFA(Arc::new(RwLock::new(x))))
             .map_err(Into::into)

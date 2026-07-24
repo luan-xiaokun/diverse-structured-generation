@@ -1,6 +1,6 @@
 class DiverseGuideDFA:
     def __init__(
-        self, regex: str, eos_token_id: int, token_id_to_token: dict[int, str]
+        self, regex: str, eos_token_id: int, token_id_to_bytes: dict[int, bytes]
     ) -> None:
         """Creates a DFA from a regex to guide diverse generation."""
         ...
