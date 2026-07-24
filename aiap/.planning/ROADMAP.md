@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** Tokenizer vocabulary entries traverse the DFA as exact raw bytes across the Python/Rust boundary, persisted artifacts enforce the new bytes-only schema, and witness selection separates byte-level-unreachable uncovered obligations from actual generation failures.
 **Requirements**: BASE-01, BASE-02
 **Depends on:** Phase 1
-**Plans:** 4/7 plans executed
+**Plans:** 5/7 plans executed
 
 **Success Criteria** (what must be TRUE):
 
@@ -71,7 +71,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01.1-05-PLAN.md — Classify accepting token-action reachability and define bounded replay-backed outcomes.
+- [x] 01.1-05-PLAN.md — Classify accepting token-action reachability and define bounded replay-backed outcomes.
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

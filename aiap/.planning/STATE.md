@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01.1
 current_phase_name: Repair tokenizer vocabulary and byte-DFA contract
 status: executing
-stopped_at: Completed 01.1-04-PLAN.md
-last_updated: "2026-07-24T06:45:47.190Z"
+stopped_at: Completed 01.1-05-PLAN.md
+last_updated: "2026-07-24T07:00:24.122Z"
 last_activity: 2026-07-24
 last_activity_desc: Phase 01.1 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-23)
 ## Current Position
 
 Phase: 01.1 (Repair tokenizer vocabulary and byte-DFA contract) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-07-24 — Phase 01.1 execution started
 
@@ -58,6 +58,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 01.1 P02 | 20 minutes | 1 tasks | 11 files |
 | Phase 01.1 P03 | 3min | 1 tasks | 4 files |
 | Phase 01.1 P04 | 22min | 2 tasks | 1 files |
+| Phase 01.1 P05 | 16min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 01.1]: Schema-1 DFA artifacts use fixed magic, a package-independent version, and bounded full-consumption decode.
 - [Phase 01.1]: Keep regex-dfa-guide version dynamic in its Python packaging metadata. — Avoid a duplicate native Python version source.
 - [Phase 01.1]: Verify artifact dispatch against ARTIFACT_SCHEMA_VERSION rather than package metadata. — Artifact schema compatibility remains independent from release numbering.
+- [Phase 01.1]: Classify only caller-supplied missing obligations; never rebuild the full catalog in reachability. — Preserves D-14 selected-sample obligation semantics.
+- [Phase 01.1]: A witness succeeds only after aggregate-eligible canonical replay credits its exact stable target ID. — Prevents predicted search matches from being reported as coverage.
+- [Phase 01.1]: Use max_expansions=None for exhaustive BFS; emit search_limit only when an explicit cap is exhausted. — Separates bounded resource exhaustion from graph infeasibility.
 
 ### Pending Todos
 
@@ -99,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-24T06:45:39.952Z
-Stopped at: Completed 01.1-04-PLAN.md
+Last session: 2026-07-24T07:00:24.117Z
+Stopped at: Completed 01.1-05-PLAN.md
 Resume file: None
