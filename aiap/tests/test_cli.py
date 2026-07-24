@@ -75,21 +75,29 @@ def test_jsonl_output_is_reserved_for_generated_proposals(tmp_path):
     assert output.read_text(encoding="utf-8").count("\n") == 1
 
 
-def test_failed_proposal_certificate_is_explicit():
-    from aiap.cli import _failed_proposal_certificate
+def test_attempt_failure_certificate_carries_typed_outcome():
+    from aiap.cli import _attempt_failure_certificate
 
     class Dfa:
         def get_initial_state(self):
             return 7
 
-    class Obligation:
-        obligation_id = "state:9"
-        kind = "state"
-        raw_meaning = 9
+    obligation = CoverageObligation("state", 9)
+    classified = ClassifiedObligation(
+        obligation,
+        True,
+        None,
+        ReachabilityEvidence("test", 1, 1, 1),
+    )
 
-    certificate = _failed_proposal_certificate(Dfa(), Obligation())
+    certificate = _attempt_failure_certificate(
+        Dfa(),
+        classified,
+        WitnessSearchResult(None, 3, 3, True, "expansion_limit"),
+    )
     assert certificate.metadata["proposal"] == "state:9"
-    assert certificate.failure.category == "no_accepting_witness"
+    assert certificate.failure.category == "search_limit"
+    assert certificate.witness_result.outcome == "search_limit"
     assert not certificate.aggregate_eligible
 
 
@@ -168,13 +176,14 @@ def test_run_case_classifies_selected_baseline_missing_then_selects_reachable(
     monkeypatch.setattr(cli, "classify_reachability", classify)
     monkeypatch.setattr(cli, "construct_one_witness", search)
 
-    summary, attempts = run_case(
+    summary, all_certificates = run_case(
         case, TinyTokenizer(), sample_num=1, obligation_num=2, max_expansions=7
     )
 
     assert classified_inputs == ["state:1", "state:2", "state:3"]
     assert searched == [("state:2", 7), ("state:3", 7)]
-    assert len(attempts) == 2
+    assert len(all_certificates) == 3
+    assert len(summary["attempt_certificates"]) == 2
     assert summary["obligations"]["missing_total"] == 3
     assert summary["obligations"]["reachable_total"] == 2
     assert summary["obligations"]["unreachable_total"] == 1
