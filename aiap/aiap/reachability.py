@@ -115,19 +115,43 @@ def _coreachable_states(
     return seen
 
 
-def _matches(obligation: CoverageObligation, edge: TokenGraphEdge) -> bool:
-    action_states = {edge.source_state, edge.destination_state}
-    action_states.update(step[2] for step in edge.byte_steps)
-    if obligation.is_state_obligation():
-        return obligation.state in action_states
-    if obligation.is_transition_obligation():
-        return obligation.transition in edge.byte_steps
-    if obligation.is_path_obligation():
-        return any(
-            obligation.path == (source, destination)
-            for source, _, destination in edge.byte_steps
-        )
-    raise ValueError(f"Unsupported obligation kind: {obligation.kind}")
+def _matching_action_counts(
+    obligations: Iterable[CoverageObligation], edges: Iterable[TokenGraphEdge]
+) -> dict[str, int]:
+    """Count accepting actions matching each supplied missing obligation.
+
+    The direct formulation checked every obligation against every accepting token
+    action.  On a real tokenizer that makes classification quadratic in the
+    number of missing DFA structures and token actions.  Index only the supplied
+    missing meanings, then scan each action once.  Each action contributes at
+    most one count per meaning, matching the boolean semantics of the former
+    per-edge predicate.
+    """
+
+    supplied = list(obligations)
+    state_ids = {item.state for item in supplied if item.is_state_obligation()}
+    transition_ids = {
+        item.transition for item in supplied if item.is_transition_obligation()
+    }
+    path_ids = {item.path for item in supplied if item.is_path_obligation()}
+    counts = {item.obligation_id: 0 for item in supplied}
+
+    for edge in edges:
+        action_states = {edge.source_state, edge.destination_state}
+        action_states.update(target for _, _, target in edge.byte_steps)
+        for state in action_states & state_ids:
+            counts[f"state:{state}"] += 1
+
+        transitions = set(edge.byte_steps)
+        for transition in transitions & transition_ids:
+            source, byte, target = transition
+            counts[f"transition:{source}:{byte}:{target}"] += 1
+
+        paths = {(source, target) for source, _, target in edge.byte_steps}
+        for source, target in paths & path_ids:
+            counts[f"path:{source}:{target}"] += 1
+
+    return counts
 
 
 def classify_reachability(
@@ -150,12 +174,11 @@ def classify_reachability(
         for edge in edges
         if edge.source_state in forward and edge.destination_state in coreachable
     ]
+    matching_counts = _matching_action_counts(missing, accepting_edges)
     return [
         ClassifiedObligation(
             obligation=obligation,
-            reachable=bool(
-                matches := sum(_matches(obligation, edge) for edge in accepting_edges)
-            ),
+            reachable=bool(matches := matching_counts[obligation.obligation_id]),
             category=None if matches else "byte_level_unreachable",
             evidence=ReachabilityEvidence(
                 algorithm="annotated_token_graph_1",
