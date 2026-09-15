@@ -150,6 +150,7 @@ def test_min_path_frequency_adjustment_matches_between_python_and_rust(
     rs_proc = RustProcessor(
         REGEX, mock_tokenizer, gamma=0.5, path_frequency_estimator="min"
     )
+    assert not hasattr(rs_proc, "_python_fallback")
 
     input_ids = torch.zeros(1, 0, dtype=torch.long)
     scores_base = _make_scores()

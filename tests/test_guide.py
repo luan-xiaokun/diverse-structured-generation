@@ -107,6 +107,24 @@ def _make_input_ids(prompt_len: int = 5) -> torch.LongTensor:
     return torch.zeros(1, prompt_len, dtype=torch.long)
 
 
+class _ValuesOnlyDFA:
+    def __init__(self, inner):
+        self.inner = inner
+        self.compute_adjustments_calls = 0
+        self.compute_adjustment_values_calls = 0
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def compute_adjustments(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        self.compute_adjustments_calls += 1
+        return self.inner.compute_adjustments(*args, **kwargs)
+
+    def compute_adjustment_values(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        self.compute_adjustment_values_calls += 1
+        return self.inner.compute_adjustment_values(*args, **kwargs)
+
+
 def test_masking_disallows_non_regex_tokens(mock_tokenizer):
     """Tokens not in the DFA's allowed set should become -inf."""
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
@@ -122,6 +140,22 @@ def test_masking_disallows_non_regex_tokens(mock_tokenizer):
     # All other tokens should be -inf
     for tok in [0, 1, 9, 11, 19, 21, 98]:
         assert scores[0, tok].item() == float("-inf"), f"token {tok} should be -inf"
+
+
+def test_diverse_processor_uses_values_only_adjustment_api(mock_tokenizer):
+    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
+    guarded_dfa = _ValuesOnlyDFA(proc.dfa)
+    proc.dfa = guarded_dfa
+
+    proc(_make_input_ids(), _make_scores())
+    assert guarded_dfa.compute_adjustments_calls == 1
+    assert guarded_dfa.compute_adjustment_values_calls == 0
+    assert len(proc._allowed_token_tensor_cache) == 1
+
+    proc(_make_input_ids(), _make_scores())
+    assert guarded_dfa.compute_adjustments_calls == 1
+    assert guarded_dfa.compute_adjustment_values_calls == 1
+    assert len(proc._allowed_token_tensor_cache) == 1
 
 
 def test_masking_eos_at_final_state(mock_tokenizer):
@@ -482,6 +516,32 @@ def test_generate_batch_updates_path_counter(mock_tokenizer):
     assert sum(reward_after) > 0
 
 
+def test_invalid_rust_generation_does_not_update_global_path_counter():
+    tok = _CoverageTokenizer()
+    proc = DiverseRegexLogitsProcessor("ab", tok, gamma=0.0)
+    adapter = StatefulSequenceGeneratorAdapter(_CoverageModel(), tok, proc)
+    initial = proc.dfa.get_initial_state()
+
+    text = adapter("prompt", max_tokens=1)
+
+    assert text == "a"
+    _, reward_after, _ = proc.dfa.compute_counts(initial)
+    assert all(c == 0 for c in reward_after)
+
+
+def test_valid_rust_generation_updates_global_path_counter():
+    tok = _CoverageTokenizer()
+    proc = DiverseRegexLogitsProcessor("ab", tok, gamma=0.0)
+    adapter = StatefulSequenceGeneratorAdapter(_CoverageModel(), tok, proc)
+    initial = proc.dfa.get_initial_state()
+
+    text = adapter("prompt", max_tokens=2)
+
+    assert text == "ab"
+    _, reward_after, _ = proc.dfa.compute_counts(initial)
+    assert sum(reward_after) > 0
+
+
 def test_generate_batch_resets_local_counter(mock_tokenizer):
     """generate_batch resets local_state_counter before each call."""
     n = 2
@@ -674,6 +734,17 @@ def test_python_adapter_and_factory_coverage():
     assert d.completion_bias_eta == 0.2
     assert d.path_frequency_estimator == "harmonic"
     assert b.logits_processor.gamma == 0.0
+
+
+def test_python_update_generated_content_ignores_non_final_prefix():
+    tok = _CoverageTokenizer()
+    proc = gp.DiverseRegexLogitsProcessor("ab", tok, gamma=0.0)
+
+    proc.update_generated_content("a")
+
+    assert not proc.transition_counter
+    proc.update_generated_content("ab")
+    assert proc.transition_counter
 
 
 def test_rust_get_next_instruction_none_and_ablation_branches():

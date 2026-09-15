@@ -204,6 +204,45 @@ def test_update_path_counter_raw_string_does_not_count_eos(dfa_multi):
     assert dict(zip(token_ids, reward_counts))[99] == 0.0
 
 
+def test_commit_valid_token_path_ignores_non_final_prefix():
+    dfa = DiverseGuideDFA("(?:ab)$", 99, {10: "a", 20: "b", 30: "ab"})
+    initial = dfa.get_initial_state()
+
+    assert not dfa.commit_valid_token_path([10])
+
+    token_ids, reward_counts, _ = dfa.compute_counts(initial)
+    assert all(count == 0.0 for count in reward_counts)
+    assert 10 in token_ids
+
+
+def test_commit_valid_token_path_is_atomic_for_invalid_sequence():
+    dfa = DiverseGuideDFA("(?:ab)$", 99, {10: "a", 20: "b", 30: "ab"})
+    initial = dfa.get_initial_state()
+
+    assert not dfa.commit_valid_token_path([10, 99])
+
+    _, reward_counts, _ = dfa.compute_counts(initial)
+    assert all(count == 0.0 for count in reward_counts)
+
+    assert dfa.commit_valid_token_path([10, 20])
+    token_ids, reward_counts, _ = dfa.compute_counts(initial)
+    assert dict(zip(token_ids, reward_counts, strict=True))[10] == pytest.approx(1.0)
+
+
+def test_commit_valid_token_path_counts_explicit_and_implicit_eos_once():
+    implicit = DiverseGuideDFA("(?:ab)$", 99, {30: "ab"})
+    explicit = DiverseGuideDFA("(?:ab)$", 99, {30: "ab"})
+    initial = implicit.get_initial_state()
+    final_state = implicit.get_next_token_state(initial, 30)
+
+    assert implicit.commit_valid_token_path([30])
+    assert explicit.commit_valid_token_path([30, 99])
+
+    assert implicit.compute_counts(final_state) == explicit.compute_counts(final_state)
+    token_ids, reward_counts, _ = implicit.compute_counts(final_state)
+    assert dict(zip(token_ids, reward_counts, strict=True))[99] == pytest.approx(1.0)
+
+
 def test_reset_path_counter(dfa_multi):
     dfa_multi.update_path_counter("a")
     dfa_multi.reset_path_counter()
@@ -327,6 +366,42 @@ def test_compute_adjustments_completion_bias_bonus():
     by_token = dict(zip(token_ids, adjustments, strict=True))
     assert by_token[10] == pytest.approx(0.0)
     assert by_token[20] == pytest.approx(0.1, abs=1e-6)
+
+
+@pytest.mark.parametrize("estimator", ["min", "harmonic"])
+@pytest.mark.parametrize(
+    ("no_reward", "no_penalty"),
+    [(False, False), (True, False), (False, True), (True, True)],
+)
+def test_compute_adjustment_values_match_full_adjustments(
+    dfa_multi, estimator, no_reward, no_penalty
+):
+    initial = dfa_multi.get_initial_state()
+    dfa_multi.update_path_counter("ab")
+    dfa_multi.update_local_state_counter(initial, 10)
+    dfa_multi.update_local_state_counter(initial, 10)
+
+    _, full_adjustments = dfa_multi.compute_adjustments_with_estimator(
+        initial,
+        no_reward,
+        no_penalty,
+        0.2,
+        estimator,
+    )
+    values = dfa_multi.compute_adjustment_values_with_estimator(
+        initial,
+        no_reward,
+        no_penalty,
+        0.2,
+        estimator,
+    )
+
+    assert values == pytest.approx(full_adjustments)
+
+
+def test_compute_adjustment_values_invalid_state_raises_value_error(dfa_multi):
+    with pytest.raises(ValueError):
+        dfa_multi.compute_adjustment_values(2**32 - 1, False, False, 0.0)
 
 
 # ---------------------------------------------------------------------------

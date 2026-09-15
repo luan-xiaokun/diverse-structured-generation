@@ -27,9 +27,9 @@ MODEL_ORDER = (
     "phi-4-mini-instruct",
 )
 MODEL_LABELS = {
-    "qwen2.5-0.5b-instruct": "Qwen2.5-0.5B",
-    "qwen2.5-1.5b-instruct": "Qwen2.5-1.5B",
-    "phi-4-mini-instruct": "Phi-4-mini",
+    "qwen2.5-0.5b-instruct": "Qwen2.5-0.5B-Instruct",
+    "qwen2.5-1.5b-instruct": "Qwen2.5-1.5B-Instruct",
+    "phi-4-mini-instruct": "Phi-4-Mini-Instruct",
 }
 
 METHOD_ORDER = ("baseline_outlines", "diverse_guide", "diverse_guide_plus")
@@ -273,6 +273,7 @@ def plot_model_grid(rows: list[dict], args: argparse.Namespace) -> Path:
         len(MODEL_ORDER),
         figsize=(args.width, 5.25),
         sharex=True,
+        sharey="row",
         constrained_layout=False,
     )
 

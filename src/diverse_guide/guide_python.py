@@ -266,14 +266,18 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         return scores
 
     def update_generated_content(self, generated_content: str) -> None:
-        """Update cross-call counters from a completed generated string."""
-        states = list(self.guide.dfa.get_state_sequence(generated_content))
-        if states and self.guide.dfa.is_final_state(states[-1]):
-            states.extend(
-                self.guide.dfa.get_byte_state_sequence(
-                    states[-1], self.guide.eos_token_id
-                )[1:]
-            )
+        """Update cross-call counters only for valid completed strings."""
+        try:
+            states = list(self.guide.dfa.get_state_sequence(generated_content))
+        except ValueError:
+            return
+        if not states or not self.guide.dfa.is_final_state(states[-1]):
+            return
+        states.extend(
+            self.guide.dfa.get_byte_state_sequence(
+                states[-1], self.guide.eos_token_id
+            )[1:]
+        )
         transitions = list(zip(states, states[1:]))
         for state in states:
             self.state_counter[state] += 1

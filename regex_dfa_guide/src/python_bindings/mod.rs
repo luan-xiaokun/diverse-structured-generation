@@ -7,6 +7,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rustc_hash::FxHashMap as HashMap;
+use std::time::Instant;
 
 use crate::diverse_guide_dfa::{DiverseGuideDFA, PathFrequencyEstimator};
 
@@ -129,6 +130,11 @@ impl PyDiverseGuideDFA {
         Ok(())
     }
 
+    fn commit_valid_token_path(&self, token_ids: Vec<u64>) -> PyResult<bool> {
+        let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
+        Ok(dfa_guard.commit_valid_token_path(&token_ids)?)
+    }
+
     fn update_local_state_counter(&self, state: u32, token_id: u64) -> PyResult<()> {
         let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
         dfa_guard.update_local_state_counter(state, token_id)?;
@@ -173,6 +179,25 @@ impl PyDiverseGuideDFA {
         ))
     }
 
+    fn profile_compute_counts_with_estimator(
+        &self,
+        state: u32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<(Vec<u64>, Vec<f32>, Vec<u32>, f64)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        let started = Instant::now();
+        let counts = dfa_guard.compute_counts(state, estimator)?;
+        let rust_compute_ms = started.elapsed().as_secs_f64() * 1000.0;
+        Ok((
+            counts.token_ids,
+            counts.reward_counts,
+            counts.penalty_counts,
+            rust_compute_ms,
+        ))
+    }
+
     fn compute_adjustments(
         &self,
         state: u32,
@@ -189,6 +214,23 @@ impl PyDiverseGuideDFA {
             PathFrequencyEstimator::Harmonic,
         )?;
         Ok((adjustments.token_ids, adjustments.adjustments))
+    }
+
+    fn compute_adjustment_values(
+        &self,
+        state: u32,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+    ) -> PyResult<Vec<f32>> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        Ok(dfa_guard.compute_adjustment_values(
+            state,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+            PathFrequencyEstimator::Harmonic,
+        )?)
     }
 
     fn compute_adjustments_with_estimator(
@@ -210,6 +252,76 @@ impl PyDiverseGuideDFA {
             estimator,
         )?;
         Ok((adjustments.token_ids, adjustments.adjustments))
+    }
+
+    fn profile_compute_adjustments_with_estimator(
+        &self,
+        state: u32,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<(Vec<u64>, Vec<f32>, f64)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        let started = Instant::now();
+        let adjustments = dfa_guard.compute_adjustments(
+            state,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+            estimator,
+        )?;
+        let rust_compute_ms = started.elapsed().as_secs_f64() * 1000.0;
+        Ok((
+            adjustments.token_ids,
+            adjustments.adjustments,
+            rust_compute_ms,
+        ))
+    }
+
+    fn compute_adjustment_values_with_estimator(
+        &self,
+        state: u32,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<Vec<f32>> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        Ok(dfa_guard.compute_adjustment_values(
+            state,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+            estimator,
+        )?)
+    }
+
+    fn profile_compute_adjustment_values_with_estimator(
+        &self,
+        state: u32,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+        path_frequency_estimator: &str,
+    ) -> PyResult<(Vec<f32>, f64)> {
+        let dfa_guard = self.0.read().map_err(map_poison_error_to_pyerr)?;
+        let estimator = PathFrequencyEstimator::try_from(path_frequency_estimator)
+            .map_err(|err| PyErr::new::<PyValueError, _>(err))?;
+        let started = Instant::now();
+        let adjustments = dfa_guard.compute_adjustment_values(
+            state,
+            no_reward,
+            no_penalty,
+            completion_bias_eta,
+            estimator,
+        )?;
+        let rust_compute_ms = started.elapsed().as_secs_f64() * 1000.0;
+        Ok((adjustments, rust_compute_ms))
     }
 
     fn __repr__(&self) -> PyResult<String> {

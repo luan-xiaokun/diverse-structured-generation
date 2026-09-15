@@ -53,8 +53,16 @@ class DiverseGuideDFA:
         """Updates the path counter for the given string."""
         ...
 
+    def update_path_counter_raw_string(self, string: str) -> None:
+        """Updates the path counter for a raw string without adding EOS."""
+        ...
+
     def update_path_counter_for_token(self, state: int, token_id: int) -> None:
         """Updates the path counter after consuming one token from state."""
+        ...
+
+    def commit_valid_token_path(self, token_ids: list[int]) -> bool:
+        """Commits token path counters only if the token sequence is valid."""
         ...
 
     def update_local_state_counter(self, state: int, token_id: int) -> None:
@@ -79,6 +87,12 @@ class DiverseGuideDFA:
         """Computes the counts for the given state using an explicit estimator."""
         ...
 
+    def profile_compute_counts_with_estimator(
+        self, state: int, path_frequency_estimator: str
+    ) -> tuple[list[int], list[float], list[int], float]:
+        """Computes counts and returns Rust-side compute time in milliseconds."""
+        ...
+
     def compute_adjustments(
         self,
         state: int,
@@ -87,6 +101,16 @@ class DiverseGuideDFA:
         completion_bias_eta: float,
     ) -> tuple[list[int], list[float]]:
         """Computes diversity adjustment values for the given state."""
+        ...
+
+    def compute_adjustment_values(
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
+    ) -> list[float]:
+        """Computes diversity adjustment values without returning token ids."""
         ...
 
     def compute_adjustments_with_estimator(
@@ -98,6 +122,39 @@ class DiverseGuideDFA:
         path_frequency_estimator: str,
     ) -> tuple[list[int], list[float]]:
         """Computes diversity adjustment values with an explicit estimator."""
+        ...
+
+    def profile_compute_adjustments_with_estimator(
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
+        path_frequency_estimator: str,
+    ) -> tuple[list[int], list[float], float]:
+        """Computes adjustments and returns Rust-side compute time in ms."""
+        ...
+
+    def compute_adjustment_values_with_estimator(
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
+        path_frequency_estimator: str,
+    ) -> list[float]:
+        """Computes diversity adjustment values without returning token ids."""
+        ...
+
+    def profile_compute_adjustment_values_with_estimator(
+        self,
+        state: int,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: float,
+        path_frequency_estimator: str,
+    ) -> tuple[list[float], float]:
+        """Computes adjustment values and returns Rust-side compute time in ms."""
         ...
 
     def __reduce__(self) -> tuple:

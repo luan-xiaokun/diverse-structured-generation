@@ -12,9 +12,6 @@ try:
 except ImportError:
     from regex_dfa_guide.regex_dfa_guide_rs import DiverseGuideDFA
 
-from .guide_python import (
-    DiverseRegexLogitsProcessor as PythonDiverseRegexLogitsProcessor,
-)
 from .vocab import build_token_id_map
 
 
@@ -242,16 +239,6 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self.no_reward = no_reward
         self.no_penalty = no_penalty
         self.no_range_scaling = no_range_scaling
-        self._python_fallback: PythonDiverseRegexLogitsProcessor | None = None
-        if path_frequency_estimator == "min":
-            self._python_fallback = PythonDiverseRegexLogitsProcessor(
-                regex_string,
-                tokenizer,
-                gamma=gamma,
-                completion_bias_eta=completion_bias_eta,
-                path_frequency_estimator="min",
-            )
-
         self._seq_start_idx: int | None = None
         self._guide_states_by_row: list[int] | None = None
         self._processed_lengths_by_row: list[int] | None = None
@@ -262,8 +249,6 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
     def reset(self) -> None:
         """Reset per-call state. Must be called before each new ``model.generate()``
         call."""
-        if self._python_fallback is not None:
-            self._python_fallback.reset()
         self._seq_start_idx = None
         self._guide_states_by_row = None
         self._processed_lengths_by_row = None
@@ -293,7 +278,6 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                 except ValueError:
                     state = -1
                 if state != -1:
-                    self.dfa.update_path_counter_for_token(prev_state, token_id)
                     self.dfa.update_local_state_counter(prev_state, token_id)
             processed += 1
 
@@ -319,11 +303,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         return reward / penalty
 
     def _allowed_token_tensor(
-        self, state: int, allowed_tokens: list[int], device: torch.device
+        self, state: int, device: torch.device
     ) -> torch.LongTensor:
         cache_key = (state, _device_cache_key(device))
         allowed_token_tensor = self._allowed_token_tensor_cache.get(cache_key)
         if allowed_token_tensor is None:
+            allowed_tokens = self.guide.get_next_instruction(state)
             allowed_token_tensor = torch.tensor(
                 allowed_tokens, dtype=torch.long, device=device
             )
@@ -334,22 +319,37 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self, guide_state: int, device: torch.device
     ) -> tuple[torch.LongTensor, torch.FloatTensor]:
         if guide_state == -1:
-            allowed_tokens = [self.guide.eos_token_id]
-            adjustments = self._compute_adjustments_from_counts([0], [1])
+            adjustments = self._compute_adjustments_from_counts([0], [1]).to(device)
             return (
-                self._allowed_token_tensor(guide_state, allowed_tokens, device),
+                self._allowed_token_tensor(guide_state, device),
                 adjustments,
             )
 
-        allowed_tokens, adjustments = self.dfa.compute_adjustments(
-            guide_state,
-            self.no_reward,
-            self.no_penalty,
-            self.completion_bias_eta,
-        )
+        cache_key = (guide_state, _device_cache_key(device))
+        allowed_token_tensor = self._allowed_token_tensor_cache.get(cache_key)
+        if allowed_token_tensor is None:
+            allowed_tokens, adjustments = self.dfa.compute_adjustments_with_estimator(
+                guide_state,
+                self.no_reward,
+                self.no_penalty,
+                self.completion_bias_eta,
+                self.path_frequency_estimator,
+            )
+            allowed_token_tensor = torch.tensor(
+                allowed_tokens, dtype=torch.long, device=device
+            )
+            self._allowed_token_tensor_cache[cache_key] = allowed_token_tensor
+        else:
+            adjustments = self.dfa.compute_adjustment_values_with_estimator(
+                guide_state,
+                self.no_reward,
+                self.no_penalty,
+                self.completion_bias_eta,
+                self.path_frequency_estimator,
+            )
         return (
-            self._allowed_token_tensor(guide_state, allowed_tokens, device),
-            torch.tensor(adjustments, dtype=torch.float),
+            allowed_token_tensor,
+            torch.tensor(adjustments, dtype=torch.float, device=device),
         )
 
     def __call__(
@@ -357,9 +357,6 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
     ) -> torch.FloatTensor:
         """Apply masking and diversity adjustment; called by ``model.generate`` at each
         step."""
-        if self._python_fallback is not None:
-            return self._python_fallback(input_ids, scores)
-
         if self._seq_start_idx is None:
             self._seq_start_idx = input_ids.shape[1]
         self._ensure_rows(input_ids.shape[0])
@@ -403,22 +400,16 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         return scores
 
     def update_generated_content(self, generated_content: str) -> None:
-        if self._python_fallback is not None:
-            self._python_fallback.update_generated_content(generated_content)
-        else:
-            # Rust-backed harmonic mode updates counters incrementally from token ids.
-            del generated_content
+        # Rust-backed modes commit valid completed token sequences through
+        # update_generated_token_ids().
+        del generated_content
 
     def update_generated_token_ids(self, generated_token_ids: torch.Tensor) -> None:
-        """Consume generated token ids that were never seen by a later logits call."""
-        if self._python_fallback is not None:
-            return
-
+        """Commit generated token paths to global counters only if samples are valid."""
         if generated_token_ids.ndim == 1:
             generated_token_ids = generated_token_ids.unsqueeze(0)
-        self._ensure_rows(generated_token_ids.shape[0])
-        for row, gen_ids in enumerate(generated_token_ids):
-            self._advance_row(row, gen_ids)
+        for gen_ids in generated_token_ids:
+            self.dfa.commit_valid_token_path([int(token_id) for token_id in gen_ids])
 
 
 class StatefulSequenceGeneratorAdapter:
@@ -426,7 +417,7 @@ class StatefulSequenceGeneratorAdapter:
     stateful generation.
 
     Maintains a cross-call path counter so that successive calls (or batches)
-    are diversified relative to token paths generated so far.
+    are diversified relative to valid completed token paths generated so far.
 
     Typical usage::
 
@@ -434,8 +425,8 @@ class StatefulSequenceGeneratorAdapter:
         for _ in range(100):
             text = generator(prompt, max_tokens=40)
 
-    The logits processor updates counters automatically from newly generated
-    token ids during generation.
+    The logits processor updates local counters during generation and commits
+    global path counters after generation only for valid completed samples.
     """
 
     def __init__(
@@ -542,9 +533,9 @@ class StatefulSequenceGeneratorAdapter:
     def update_generated_content(self, generated_content: str) -> None:
         """Update the global path counter with a previously generated string.
 
-        Deprecated. Runtime path counters are updated incrementally from newly
-        generated token ids inside the Rust logits processor. The pure-Python
-        min-estimator fallback still uses this hook for its Python counters.
+        Deprecated for Rust-backed diverse modes. Runtime path counters are
+        committed automatically from generated token ids only when the completed
+        sample is valid.
         """
         self.logits_processor.update_generated_content(generated_content)
 

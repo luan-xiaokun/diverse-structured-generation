@@ -11,7 +11,9 @@ export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 SAMPLE_COUNT="${SAMPLE_COUNT:-500}"
 SEED="${SEED:-42}"
 DEFAULT_MAX_TOKENS="${DEFAULT_MAX_TOKENS:-24}"
-JSON_MAX_TOKENS="${JSON_MAX_TOKENS:-54}"
+JSON_MAX_TOKENS="${JSON_MAX_TOKENS:-72}"
+DIVERSE_GUIDE_PLUS_GAMMA="${DIVERSE_GUIDE_PLUS_GAMMA:-0.3}"
+DIVERSE_GUIDE_PLUS_ETA="${DIVERSE_GUIDE_PLUS_ETA:-0.1}"
 DATA_ROOT="${DATA_ROOT:-data/extension/main_matrix_500}"
 LOG_DIR="${LOG_DIR:-logs/extension/main_matrix_500}"
 SUMMARY_DIR="${SUMMARY_DIR:-results/extension/main_matrix_500}"
@@ -29,10 +31,10 @@ MODELS=(
 GRAMMARS=(
   "email"
   "css-color"
-  "json"
   "no-bomb"
   "semver"
   "api-route"
+  "json"
 )
 
 METHODS=(
@@ -179,8 +181,8 @@ set_method_args() {
       ;;
     diverse_guide_plus)
       method_args=(
-        "--gamma" "0.3"
-        "--completion-bias-eta" "0.1"
+        "--gamma" "$DIVERSE_GUIDE_PLUS_GAMMA"
+        "--completion-bias-eta" "$DIVERSE_GUIDE_PLUS_ETA"
         "--path-frequency-estimator" "harmonic"
       )
       ;;

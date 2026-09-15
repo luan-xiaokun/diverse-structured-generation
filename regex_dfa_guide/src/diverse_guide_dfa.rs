@@ -1,6 +1,7 @@
 //! Build a DFA for guiding diverse structured generation
 
 use bincode::{Decode, Encode};
+use rayon::prelude::*;
 use regex_automata::dfa::dense::DFA;
 use regex_automata::dfa::Automaton;
 use regex_automata::util::alphabet::Unit;
@@ -17,6 +18,16 @@ pub type StateId = u32;
 pub type TokenId = u64;
 pub type Byte = u8;
 const SERIALIZATION_VERSION: u32 = 2;
+const DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD: usize = 4096;
+const PARALLEL_ADJUSTMENT_THRESHOLD_ENV: &str = "DIVERSE_GUIDE_PARALLEL_ADJUSTMENT_THRESHOLD";
+
+fn parallel_adjustment_threshold() -> usize {
+    std::env::var(PARALLEL_ADJUSTMENT_THRESHOLD_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|&value| value > 0)
+        .unwrap_or(DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathFrequencyEstimator {
@@ -595,10 +606,11 @@ impl DfaIndex {
         state: StateId,
         token_id: TokenId,
     ) -> Option<&AllowedTokenInfo> {
-        self.allowed_token_infos
-            .get(&state)?
-            .iter()
-            .find(|info| info.token_id == token_id)
+        let infos = self.allowed_token_infos.get(&state)?;
+        infos
+            .binary_search_by_key(&token_id, |info| info.token_id)
+            .ok()
+            .map(|idx| &infos[idx])
     }
 
     fn compute_byte_state_sequence(
@@ -865,6 +877,13 @@ impl DiverseGuideDFA {
         state: StateId,
         token_id: TokenId,
     ) -> Result<()> {
+        if let Some(info) = self.index.find_allowed_token_info(state, token_id) {
+            for &edge_idx in &info.edge_indices {
+                self.path_counter[edge_idx] += 1;
+            }
+            return Ok(());
+        }
+
         let state_sequence = self.index.get_byte_state_sequence(state, token_id)?;
         for window in state_sequence.windows(2) {
             if let [from_state, to_state] = window {
@@ -890,6 +909,46 @@ impl DiverseGuideDFA {
         Ok(())
     }
 
+    pub fn commit_valid_token_path(&mut self, token_ids: &[TokenId]) -> Result<bool> {
+        let mut current_state = self.index.initial_state;
+        let mut edge_indices = Vec::new();
+        let mut saw_eos = false;
+
+        for &token_id in token_ids {
+            let Some(info) = self.index.find_allowed_token_info(current_state, token_id) else {
+                return Ok(false);
+            };
+            edge_indices.extend_from_slice(&info.edge_indices);
+            current_state = info.next_state;
+            if token_id == self.index.eos_token_id {
+                saw_eos = true;
+                break;
+            }
+        }
+
+        if !self.index.is_final_state(current_state) {
+            return Ok(false);
+        }
+
+        if !saw_eos {
+            let eos_info = self
+                .index
+                .find_allowed_token_info(current_state, self.index.eos_token_id)
+                .ok_or_else(|| {
+                    Error::NoTokenTransitionFound(
+                        current_state as usize,
+                        self.index.eos_token_id as usize,
+                    )
+                })?;
+            edge_indices.extend_from_slice(&eos_info.edge_indices);
+        }
+
+        for edge_idx in edge_indices {
+            self.path_counter[edge_idx] += 1;
+        }
+        Ok(true)
+    }
+
     pub fn reset_path_counter(&mut self) {
         self.path_counter.fill(0);
     }
@@ -904,6 +963,33 @@ impl DiverseGuideDFA {
         estimator: PathFrequencyEstimator,
     ) -> Result<CollectedTokenCounts<'_>> {
         let infos = self.index.get_allowed_token_infos(state)?;
+        if infos.len() >= parallel_adjustment_threshold() {
+            let token_ids = infos.par_iter().map(|info| info.token_id).collect();
+            let reward_counts: Vec<f32> = infos
+                .par_iter()
+                .map(|info| estimator.estimate(&self.path_counter, &info.edge_indices))
+                .collect();
+            let penalty_counts = infos
+                .par_iter()
+                .map(|info| {
+                    let mut maximal_local_state_count: u32 = 1;
+                    for &state_idx in &info.state_indices {
+                        maximal_local_state_count =
+                            maximal_local_state_count.max(self.local_state_counter[state_idx]);
+                    }
+                    maximal_local_state_count
+                })
+                .collect();
+            let reward_sum = reward_counts.iter().sum();
+            return Ok(CollectedTokenCounts {
+                infos,
+                token_ids,
+                reward_counts,
+                penalty_counts,
+                reward_sum,
+            });
+        }
+
         let mut token_ids = Vec::with_capacity(infos.len());
         let mut reward_counts = Vec::with_capacity(infos.len());
         let mut penalty_counts = Vec::with_capacity(infos.len());
@@ -991,6 +1077,104 @@ impl DiverseGuideDFA {
             adjustments,
         })
     }
+
+    pub fn compute_adjustment_values(
+        &self,
+        state: StateId,
+        no_reward: bool,
+        no_penalty: bool,
+        completion_bias_eta: f32,
+        estimator: PathFrequencyEstimator,
+    ) -> Result<Vec<f32>> {
+        let infos = self.index.get_allowed_token_infos(state)?;
+        let current_distance = self.index.get_distance_to_accepting(state)? as f32;
+        if infos.len() >= parallel_adjustment_threshold() {
+            let reward_counts: Vec<f32> = if no_reward {
+                Vec::new()
+            } else {
+                infos
+                    .par_iter()
+                    .map(|info| estimator.estimate(&self.path_counter, &info.edge_indices))
+                    .collect()
+            };
+            let reward_sum: f32 = reward_counts.iter().sum();
+            let reward_numerator = (1.0 + reward_sum).ln();
+            let adjustments = infos
+                .par_iter()
+                .enumerate()
+                .map(|(idx, info)| {
+                    let reward = if no_reward {
+                        1.0
+                    } else {
+                        reward_numerator / (1.0 + reward_counts[idx])
+                    };
+                    let penalty = if no_penalty {
+                        1.0
+                    } else {
+                        let mut maximal_local_state_count: u32 = 1;
+                        for &state_idx in &info.state_indices {
+                            maximal_local_state_count =
+                                maximal_local_state_count.max(self.local_state_counter[state_idx]);
+                        }
+                        (maximal_local_state_count as f32).powi(2)
+                    };
+                    let base_adjustment = reward / penalty;
+                    let completion_bonus = if completion_bias_eta > 0.0 {
+                        let next_distance = info.next_distance_to_accepting as f32;
+                        let progress = (current_distance - next_distance).max(0.0);
+                        completion_bias_eta * progress / (1.0 + current_distance)
+                    } else {
+                        0.0
+                    };
+                    base_adjustment + completion_bonus
+                })
+                .collect();
+            return Ok(adjustments);
+        }
+
+        let mut reward_counts = Vec::with_capacity(infos.len());
+        let mut reward_sum = 0.0;
+
+        if !no_reward {
+            for info in infos {
+                let reward_count = estimator.estimate(&self.path_counter, &info.edge_indices);
+                reward_sum += reward_count;
+                reward_counts.push(reward_count);
+            }
+        }
+
+        let reward_numerator = (1.0 + reward_sum).ln();
+        let mut adjustments = Vec::with_capacity(infos.len());
+
+        for (idx, info) in infos.iter().enumerate() {
+            let reward = if no_reward {
+                1.0
+            } else {
+                reward_numerator / (1.0 + reward_counts[idx])
+            };
+            let penalty = if no_penalty {
+                1.0
+            } else {
+                let mut maximal_local_state_count: u32 = 1;
+                for &state_idx in &info.state_indices {
+                    maximal_local_state_count =
+                        maximal_local_state_count.max(self.local_state_counter[state_idx]);
+                }
+                (maximal_local_state_count as f32).powi(2)
+            };
+            let base_adjustment = reward / penalty;
+            let completion_bonus = if completion_bias_eta > 0.0 {
+                let next_distance = info.next_distance_to_accepting as f32;
+                let progress = (current_distance - next_distance).max(0.0);
+                completion_bias_eta * progress / (1.0 + current_distance)
+            } else {
+                0.0
+            };
+            adjustments.push(base_adjustment + completion_bonus);
+        }
+
+        Ok(adjustments)
+    }
 }
 
 impl std::fmt::Display for DiverseGuideDFA {
@@ -1012,7 +1196,10 @@ mod tests {
     use regex_automata::Anchored;
     use rustc_hash::FxHashMap as Map;
 
-    use super::{DfaIndex, DiverseGuideDFA, Error, PathFrequencyEstimator, TokenId};
+    use super::{
+        DfaIndex, DiverseGuideDFA, Error, PathFrequencyEstimator, TokenId,
+        DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD,
+    };
 
     fn toy_vocab(eos: TokenId) -> Map<TokenId, String> {
         let mut vocab = Map::default();
@@ -1351,6 +1538,86 @@ mod tests {
     }
 
     #[test]
+    fn compute_adjustment_values_match_full_adjustments() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        dfa.update_path_counter("ab")
+            .expect("path counter update should succeed");
+        dfa.update_local_state_counter(initial, 3)
+            .expect("local counter update should succeed");
+        dfa.update_local_state_counter(initial, 3)
+            .expect("second local counter update should succeed");
+
+        for estimator in [
+            PathFrequencyEstimator::Min,
+            PathFrequencyEstimator::Harmonic,
+        ] {
+            for completion_bias_eta in [0.0, 0.2] {
+                for (no_reward, no_penalty) in
+                    [(false, false), (true, false), (false, true), (true, true)]
+                {
+                    let full = dfa
+                        .compute_adjustments(
+                            initial,
+                            no_reward,
+                            no_penalty,
+                            completion_bias_eta,
+                            estimator,
+                        )
+                        .expect("full adjustments should compute");
+                    let values = dfa
+                        .compute_adjustment_values(
+                            initial,
+                            no_reward,
+                            no_penalty,
+                            completion_bias_eta,
+                            estimator,
+                        )
+                        .expect("values-only adjustments should compute");
+
+                    assert_eq!(full.adjustments.len(), values.len());
+                    for (&left, &right) in full.adjustments.iter().zip(&values) {
+                        assert_close(left, right);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_adjustment_path_matches_values_for_large_allowed_set() {
+        let eos = 999_999;
+        let mut vocab = Map::default();
+        vocab.insert(eos, "<eos>".to_string());
+        for token_id in 1..=DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD as TokenId {
+            vocab.insert(token_id, "a".to_string());
+        }
+        vocab.insert(
+            DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD as TokenId + 1,
+            "aa".to_string(),
+        );
+        let mut dfa = DiverseGuideDFA::new("a+", eos, vocab).expect("dfa must build");
+        let initial = dfa.get_initial_state();
+        dfa.update_path_counter("aa")
+            .expect("path counter update should succeed");
+        dfa.update_local_state_counter(initial, 1)
+            .expect("local counter update should succeed");
+
+        let full = dfa
+            .compute_adjustments(initial, false, false, 0.2, PathFrequencyEstimator::Harmonic)
+            .expect("full adjustments should compute");
+        let values = dfa
+            .compute_adjustment_values(initial, false, false, 0.2, PathFrequencyEstimator::Harmonic)
+            .expect("values-only adjustments should compute");
+
+        assert!(full.adjustments.len() > DEFAULT_PARALLEL_ADJUSTMENT_THRESHOLD);
+        assert_eq!(full.adjustments.len(), values.len());
+        for (&left, &right) in full.adjustments.iter().zip(&values) {
+            assert_close(left, right);
+        }
+    }
+
+    #[test]
     fn fork_shares_index_but_resets_counters() {
         let mut dfa = toy_dfa();
         let initial = dfa.get_initial_state();
@@ -1645,6 +1912,59 @@ mod tests {
     }
 
     #[test]
+    fn commit_valid_token_path_updates_only_complete_valid_sequences() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        assert!(!dfa
+            .commit_valid_token_path(&[1])
+            .expect("valid prefix should not fail"));
+        let after_prefix = counts_by_token(&dfa, initial);
+        assert!(after_prefix.values().all(|(reward, _)| *reward == 0.0));
+
+        assert!(dfa
+            .commit_valid_token_path(&[3])
+            .expect("complete token path should commit"));
+        let after_complete = counts_by_token(&dfa, initial);
+        assert_count_entry(&after_complete, 3, 1.0, 1);
+    }
+
+    #[test]
+    fn commit_valid_token_path_is_atomic_for_invalid_tokens() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        assert!(!dfa
+            .commit_valid_token_path(&[1, 4])
+            .expect("invalid token sequence should return false"));
+
+        let counts = counts_by_token(&dfa, initial);
+        assert!(counts.values().all(|(reward, _)| *reward == 0.0));
+    }
+
+    #[test]
+    fn commit_valid_token_path_counts_eos_once() {
+        let mut implicit_eos = toy_dfa();
+        let mut explicit_eos = toy_dfa();
+        let initial = implicit_eos.get_initial_state();
+        let final_state = implicit_eos
+            .get_next_token_state(initial, 3)
+            .expect("ab token should be valid");
+
+        assert!(implicit_eos
+            .commit_valid_token_path(&[3])
+            .expect("implicit EOS path should commit"));
+        assert!(explicit_eos
+            .commit_valid_token_path(&[3, 999])
+            .expect("explicit EOS path should commit"));
+
+        let implicit_counts = counts_by_token(&implicit_eos, final_state);
+        let explicit_counts = counts_by_token(&explicit_eos, final_state);
+        assert_count_entry(&implicit_counts, 999, 1.0, 1);
+        assert_eq!(implicit_counts, explicit_counts);
+    }
+
+    #[test]
     fn update_methods_surface_transition_and_state_errors() {
         let mut dfa = toy_dfa();
         let invalid_path_err = dfa
@@ -1667,6 +1987,20 @@ mod tests {
             )
             .expect_err("invalid state should fail");
         assert!(matches!(invalid_adjustments_err, Error::InvalidState(_)));
+
+        let invalid_adjustment_values_err = dfa
+            .compute_adjustment_values(
+                u32::MAX,
+                false,
+                false,
+                0.0,
+                PathFrequencyEstimator::Harmonic,
+            )
+            .expect_err("invalid state should fail");
+        assert!(matches!(
+            invalid_adjustment_values_err,
+            Error::InvalidState(_)
+        ));
     }
 
     #[test]

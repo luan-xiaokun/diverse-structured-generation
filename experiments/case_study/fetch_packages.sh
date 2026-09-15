@@ -2,13 +2,13 @@
 set -euo pipefail
 
 EMAIL_VALIDATOR_URL="https://github.com/JoshData/python-email-validator.git"
-EMAIL_VALIDATOR_COMMIT="936aead3bf5c608f8561954e0d2955b7f97bfdad"
+EMAIL_VALIDATOR_COMMIT="v2.3.0"
 EMAIL_VALIDATOR_SUBDIR="email_validator"
 WEBCOLORS_URL="https://github.com/ubernostrum/webcolors.git"
-WEBCOLORS_COMMIT="834f77b381fad6eb31634d583894c3bc16a7ff99"
+WEBCOLORS_COMMIT="25.10.0"
 WEBCOLORS_SUBDIR="src/webcolors"
 PYTHON_SEMVER_URL="https://github.com/python-semver/python-semver.git"
-PYTHON_SEMVER_COMMIT="6adf8765f6e21910f1f0c13151ce84f32f8d431d"
+PYTHON_SEMVER_COMMIT="3.0.4"
 PYTHON_SEMVER_SUBDIR="src/semver"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

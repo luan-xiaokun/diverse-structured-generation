@@ -9,6 +9,7 @@ rust-version = "1.71.1"
 [dependencies]
 bincode = "2.0.1"
 regex-automata = "0.4.9"
+rayon = "1.10.0"
 rustc-hash = "2.1.1"
 thiserror = "2.0.12"
 pyo3 = { version = "0.28.2", features = ["extension-module"], optional = true }
