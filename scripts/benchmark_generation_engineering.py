@@ -427,6 +427,7 @@ def build_rust_only_processor_class(guide_rust_module: Any):
             no_reward: bool = False,
             no_penalty: bool = False,
             no_range_scaling: bool = False,
+            eos_completion_mode: str = "legacy",
         ):
             super().__init__(
                 regex_string,
@@ -437,6 +438,7 @@ def build_rust_only_processor_class(guide_rust_module: Any):
                 no_reward=no_reward,
                 no_penalty=no_penalty,
                 no_range_scaling=no_range_scaling,
+                eos_completion_mode=eos_completion_mode,
             )
             self.path_frequency_estimator = path_frequency_estimator
             self._python_fallback = None
@@ -445,11 +447,10 @@ def build_rust_only_processor_class(guide_rust_module: Any):
             self, guide_state: int, device: torch.device
         ) -> tuple[torch.LongTensor, torch.FloatTensor]:
             if guide_state == -1:
-                allowed_tokens = [self.guide.eos_token_id]
                 adjustments = self._compute_adjustments_from_counts([0], [1])
                 return (
-                    self._allowed_token_tensor(guide_state, allowed_tokens, device),
-                    adjustments,
+                    self._allowed_token_tensor(guide_state, device),
+                    adjustments.to(device),
                 )
 
             if not hasattr(self.dfa, "compute_adjustments_with_estimator"):
@@ -465,8 +466,8 @@ def build_rust_only_processor_class(guide_rust_module: Any):
                 self.path_frequency_estimator,
             )
             return (
-                self._allowed_token_tensor(guide_state, allowed_tokens, device),
-                torch.tensor(adjustments, dtype=torch.float),
+                self._allowed_token_tensor(guide_state, device),
+                torch.tensor(adjustments, dtype=torch.float, device=device),
             )
 
     return RustOnlyDiverseRegexLogitsProcessor
@@ -709,8 +710,7 @@ def load_model_and_tokenizer(
     parameter_device = _model_parameter_device(model)
     if args.require_cuda and not str(parameter_device).startswith("cuda"):
         raise RuntimeError(
-            "CUDA is required, but loaded model parameters are on "
-            f"{parameter_device}."
+            f"CUDA is required, but loaded model parameters are on {parameter_device}."
         )
 
     metadata = {

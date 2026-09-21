@@ -61,6 +61,7 @@ class GeneratedData:
     attempted_batches: int | None = None
     accepted_samples: int | None = None
     rejected_samples: int | None = None
+    eos_completion_mode: str = "legacy"
 
     def to_dict(self):
         return {
@@ -84,6 +85,7 @@ class GeneratedData:
             "attempted_batches": self.attempted_batches,
             "accepted_samples": self.accepted_samples,
             "rejected_samples": self.rejected_samples,
+            "eos_completion_mode": self.eos_completion_mode,
         }
 
     @classmethod
@@ -109,6 +111,7 @@ class GeneratedData:
             attempted_batches=data.get("attempted_batches"),
             accepted_samples=data.get("accepted_samples"),
             rejected_samples=data.get("rejected_samples"),
+            eos_completion_mode=data.get("eos_completion_mode", "legacy"),
         )
 
 
@@ -284,7 +287,15 @@ def parse_args():
         choices=["reward", "penalty", "range_scaling"],
         help="Component to ablate (for ablation studies).",
     )
+    parser.add_argument(
+        "--eos-completion-mode",
+        choices=["legacy", "constant", "entry_count"],
+        default="legacy",
+        help="Accepting-state EOS completion signal.",
+    )
     args = parser.parse_args()
+    if args.baseline and args.eos_completion_mode != "legacy":
+        parser.error("baseline requires legacy EOS completion mode")
     if args.baseline_backend == "outlines" and not args.baseline:
         parser.error("--baseline-backend outlines requires --baseline")
     return args
@@ -359,6 +370,7 @@ def main():
             completion_bias_eta=args.completion_bias_eta,
             path_frequency_estimator=args.path_frequency_estimator,
             ablation_component=args.ablation_component,
+            eos_completion_mode=getattr(args, "eos_completion_mode", "legacy"),
             **generation_kwargs,
         )
 
@@ -384,6 +396,7 @@ def main():
         0,
         0,
     )
+    gen_data.eos_completion_mode = getattr(args, "eos_completion_mode", "legacy")
     json_path: Path | None = None
     if not args.stdout_only:
         if args.output is not None:

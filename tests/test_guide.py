@@ -116,13 +116,13 @@ class _ValuesOnlyDFA:
     def __getattr__(self, name):
         return getattr(self.inner, name)
 
-    def compute_adjustments(self, *args, **kwargs):  # noqa: ANN002, ANN003
+    def compute_adjustments_with_estimator(self, *args, **kwargs):  # noqa: ANN002, ANN003
         self.compute_adjustments_calls += 1
-        return self.inner.compute_adjustments(*args, **kwargs)
+        return self.inner.compute_adjustments_with_estimator(*args, **kwargs)
 
-    def compute_adjustment_values(self, *args, **kwargs):  # noqa: ANN002, ANN003
+    def compute_adjustment_values_with_estimator(self, *args, **kwargs):  # noqa: ANN002, ANN003
         self.compute_adjustment_values_calls += 1
-        return self.inner.compute_adjustment_values(*args, **kwargs)
+        return self.inner.compute_adjustment_values_with_estimator(*args, **kwargs)
 
 
 def test_masking_disallows_non_regex_tokens(mock_tokenizer):
@@ -699,6 +699,7 @@ def test_python_processor_state_branches():
     proc = gp.DiverseRegexLogitsProcessor("[ab]", tok)
     proc._seq_start_idx = 0
     proc._guide_states[(10,)] = -1
+    proc._entry_counts[(10,)] = 0
     out = proc(torch.tensor([[10, 77]], dtype=torch.long), _make_scores_cov())
     assert not out[0, tok.eos_token_id].isinf()
 
@@ -711,6 +712,7 @@ def test_python_processor_state_branches():
     proc._seq_start_idx = 0
     valid_next = proc.guide.get_next_state(proc.guide.initial_state, 10)
     proc._guide_states[(10,)] = valid_next
+    proc._entry_counts[(10,)] = 1
     proc(torch.tensor([[10, 77]], dtype=torch.long), _make_scores_cov())
 
 
@@ -781,9 +783,7 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     adapter.update_generated_content("a")
     baseline = gr.baseline_regex(model, tok, "[ab]")
     assert isinstance(baseline.logits_processor, gr.RegexMaskLogitsProcessor)
-    guide = gr.DiverseGuide(
-        model, tok, "[ab]", gamma=0.5, completion_bias_eta=0.2
-    )
+    guide = gr.DiverseGuide(model, tok, "[ab]", gamma=0.5, completion_bias_eta=0.2)
     assert isinstance(guide, gr.StatefulSequenceGeneratorAdapter)
     assert isinstance(guide.logits_processor, gr.DiverseRegexLogitsProcessor)
     assert guide.regex_str == "[ab]"

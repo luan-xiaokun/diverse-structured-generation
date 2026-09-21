@@ -199,6 +199,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         no_reward: bool = False,
         no_penalty: bool = False,
         no_range_scaling: bool = False,
+        eos_completion_mode: str = "legacy",
     ):
         """
         Parameters
@@ -239,6 +240,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self.no_reward = no_reward
         self.no_penalty = no_penalty
         self.no_range_scaling = no_range_scaling
+        if eos_completion_mode not in {"legacy", "constant", "entry_count"}:
+            raise ValueError(
+                "eos_completion_mode must be legacy, constant or entry_count"
+            )
+        self.eos_completion_mode = eos_completion_mode
+        self._accepting_entries: list[int] = []
         self._seq_start_idx: int | None = None
         self._guide_states_by_row: list[int] | None = None
         self._processed_lengths_by_row: list[int] | None = None
@@ -252,6 +259,17 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self._seq_start_idx = None
         self._guide_states_by_row = None
         self._processed_lengths_by_row = None
+        self._accepting_entries = []
+
+    @property
+    def accepting_entries(self) -> tuple[int, ...]:
+        """Accepting-set entries at consumed token boundaries, per batch row."""
+        return tuple(self._accepting_entries)
+
+    @property
+    def sequence_states(self) -> tuple[int, ...]:
+        """Current consumed-token states, exposed for read-only diagnostics."""
+        return tuple(self._guide_states_by_row or ())
 
     def _ensure_rows(self, batch_size: int) -> None:
         if (
@@ -260,6 +278,9 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         ):
             self._guide_states_by_row = [self.guide.initial_state] * batch_size
             self._processed_lengths_by_row = [0] * batch_size
+            self._accepting_entries = [
+                int(self.dfa.is_final_state(self.guide.initial_state))
+            ] * batch_size
 
     def _advance_row(self, row: int, gen_ids: torch.Tensor) -> int:
         assert self._guide_states_by_row is not None
@@ -279,6 +300,12 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                     state = -1
                 if state != -1:
                     self.dfa.update_local_state_counter(prev_state, token_id)
+                    if (
+                        token_id != self.guide.eos_token_id
+                        and not self.dfa.is_final_state(prev_state)
+                        and self.dfa.is_final_state(state)
+                    ):
+                        self._accepting_entries[row] += 1
             processed += 1
 
         self._guide_states_by_row[row] = state
@@ -374,6 +401,20 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             allowed_tokens, adjustments = (
                 self._compute_row_allowed_tokens_and_adjustments(guide_state, device)
             )
+            if (
+                self.eos_completion_mode != "legacy"
+                and self.completion_bias_eta != 0.0
+                and guide_state != -1
+                and self.dfa.is_final_state(guide_state)
+            ):
+                signal = (
+                    self._accepting_entries[i]
+                    if self.eos_completion_mode == "entry_count"
+                    else 1
+                )
+                adjustments[allowed_tokens == self.guide.eos_token_id] += (
+                    self.completion_bias_eta * signal
+                )
             allowed_tokens_batch.append(allowed_tokens)
             batch_indices.append(torch.full_like(allowed_tokens, i))
             adjusts.append(adjustments)
@@ -558,6 +599,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         completion_bias_eta: float = 0.15,
         path_frequency_estimator: str = "harmonic",
         ablation_component: str | None = None,
+        eos_completion_mode: str = "legacy",
         **generation_kwargs,
     ):
         no_reward = ablation_component == "reward"
@@ -572,6 +614,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
             no_reward=no_reward,
             no_penalty=no_penalty,
             no_range_scaling=no_range_scaling,
+            eos_completion_mode=eos_completion_mode,
         )
         super().__init__(model, tokenizer, logits_processor, **generation_kwargs)
         self.regex_str = regex_str
@@ -579,6 +622,7 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         self.completion_bias_eta = completion_bias_eta
         self.path_frequency_estimator = path_frequency_estimator
         self.ablation_component = ablation_component
+        self.eos_completion_mode = eos_completion_mode
 
 
 def diverse_regex(
@@ -589,6 +633,7 @@ def diverse_regex(
     completion_bias_eta: float = 0.15,
     path_frequency_estimator: str = "harmonic",
     ablation_component: str | None = None,
+    eos_completion_mode: str = "legacy",
     **generation_kwargs,
 ) -> StatefulSequenceGeneratorAdapter:
     """Create a diverse regex-constrained generator.
@@ -625,6 +670,7 @@ def diverse_regex(
         completion_bias_eta=completion_bias_eta,
         path_frequency_estimator=path_frequency_estimator,
         ablation_component=ablation_component,
+        eos_completion_mode=eos_completion_mode,
         **generation_kwargs,
     )
 

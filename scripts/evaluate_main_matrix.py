@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -90,8 +89,14 @@ def sample_counts_for_limit(limit: int, step: int) -> list[int]:
     return counts
 
 
-def compile_generation_regex(regex: str) -> re.Pattern[str]:
-    return re.compile(f"^(?:{regex})$")
+def compile_generation_regex(regex: str):
+    try:
+        from generation_validation import compile_generation_regex as compile_checked
+    except ModuleNotFoundError:
+        from scripts.generation_validation import (
+            compile_generation_regex as compile_checked,
+        )
+    return compile_checked(regex)
 
 
 def validity_split(samples: list[str], regex: str) -> tuple[list[str], list[str]]:
@@ -170,6 +175,7 @@ def extract_generation_parameters(data: dict[str, Any]) -> dict[str, Any]:
         "seed",
         "gamma",
         "completion_bias_eta",
+        "eos_completion_mode",
         "path_frequency_estimator",
         "baseline_backend",
         "device",
