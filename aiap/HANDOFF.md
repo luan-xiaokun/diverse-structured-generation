@@ -2,6 +2,8 @@
 
 更新：2026-10-05。项目根目录：`aiap/`；Git 仓库根目录是其父目录。本交接依据规划文档、代码和提交记录整理；本次没有重新运行产品测试。最近产品代码提交为 `d5618da`。
 
+GSD 已完全退出本项目的工作流。使用普通 Markdown 与直接开发协作；历史 `.planning/` 已移到 `docs/archive/gsd/`，其中的命令和配置不再生效。
+
 ## 研究目标
 
 基于已发表于 ICFEM 2025 的 diverse structured generation，建立探索性研究 demo，原始投稿目标为 AISoLA 2026 AIAP track。会议当前安排及投稿可行性本次未核验。
@@ -44,7 +46,7 @@
 
 原先 tokenizer vocabulary 的文本转换破坏了 token 的真实 byte 值，引起找不到接受后缀等问题。Phase 01.1 将 Python/Rust 契约统一为 `dict[int, bytes]`，拒绝字符串及旧 artifact；EOS 保留为零 byte 动作。artifact 使用显式 magic/schema，self-contained restore 不依赖 tokenizer 或网络。错误区分 `legacy_artifact`、`unsupported_schema` 和 `corrupt_artifact`。
 
-2026-07-24 独立阶段验证记录：12/12 must-haves；Rust 15/15；hermetic pytest 89 passed、3 deselected；锁定 Qwen 的 CSS/email/U+1680 完整 byte/trace parity 通过。非阻塞问题是 `real_case_parity` pytest marker 未注册。
+2026-07-24 独立阶段验证记录：12/12 must-haves；Rust 15/15；hermetic pytest 89 passed、3 deselected；锁定 Qwen 的 CSS/email/U+1680 完整 byte/trace parity 通过。历史报告记录过 `real_case_parity` marker 未注册警告；当前 `pyproject.toml` 已注册该 marker。
 
 阶段完成后真实 CLI 曾长时间卡在 reachability：每个 missing obligation 重复扫描所有 accepting token actions。`d5618da` 改为对 supplied missing meanings 建索引、一次扫描 action 计数，保持分类及每个 action 至多贡献一次的语义。修复后下面的 CSS 命令历史耗时约 18.7 秒，1000 baseline + 10 witnesses 全部接受；合并覆盖 state=0.633、transition=0.252、path=0.426，success=10。该结果是 smoke run，不能作为正式研究结论或当前机器的性能保证。
 
@@ -74,21 +76,21 @@ HF_HUB_OFFLINE=1 ../.venv/bin/python -m pytest \
 
 ## 下一步与未决问题
 
-推荐从 `aiap/` 执行 `$gsd-discuss-phase 2`，明确分组算法、联合可行性判断、搜索 label 的 coverage 信息、dominance 关系、预算和失败分类，然后 `$gsd-plan-phase 2 research first`。Phase 2 当前未规划，不应直接把它当作待执行阶段。
+下一步直接讨论并设计 multi-obligation 方法：明确分组算法、联合可行性判断、搜索 label 的 coverage 信息、dominance 关系、预算和失败分类；查证必要的算法依据后实现并验证。历史路线中的 Phase 2 尚未设计或实现，无需执行套件命令。
 
 后续需要确定 LLM/model lock、长度匹配的自然度评价、development/held-out case 划分，以及等预算 baseline/消融协议。当前没有正式测试质量结论。
 
-`PROJECT.md` 和 `AGENTS.md` 中自动生成的 codebase 描述仍有初始化时期内容，如“没有 package/CLI/tests”。恢复工作时以实际代码和完成的阶段证据为准；遵守 AGENTS.md 的 workflow 要求。
+归档中的 `PROJECT.md` 和 codebase 描述有初始化时期内容，如“没有 package/CLI/tests”。恢复工作时以当前代码、STATE.md 和本交接为准；AGENTS.md 已重写为直接协作说明。归档中的工作流指令不再适用。
 
 本次开始时工作区有未跟踪的 `regex_dfa_guide/uv.lock`；它不属于本交接任务，已保留。
 
 ## 恢复阅读与代码导航
 
-- [STATE.md](.planning/STATE.md)：当前阶段和会话恢复点。
-- [ROADMAP.md](.planning/ROADMAP.md)：各阶段目标与 success criteria。
-- [PROJECT.md](.planning/PROJECT.md)：最初研究范围。
-- [01.1-CONTEXT.md](.planning/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-CONTEXT.md)：已锁定的详细契约。
-- [01.1-VERIFICATION.md](.planning/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-VERIFICATION.md)：历史独立验证证据。
+- [STATE.md](STATE.md)：当前工作状态。
+- [ROADMAP.md](ROADMAP.md)：研究路线与完成标准。
+- [PROJECT.md](docs/archive/gsd/PROJECT.md)：归档的最初研究范围。
+- [01.1-CONTEXT.md](docs/archive/gsd/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-CONTEXT.md)：归档的已锁定详细契约。
+- [01.1-VERIFICATION.md](docs/archive/gsd/phases/01.1-repair-tokenizer-vocabulary-and-byte-dfa-contract/01.1-VERIFICATION.md)：历史独立验证证据。
 - [cli.py](aiap/cli.py)：实验 pipeline 与输入输出人口。
 - [baseline.py](aiap/baseline.py)：单-target BFS。
 - [reachability.py](aiap/reachability.py)：accepting token-action graph 分类与索引计数。
