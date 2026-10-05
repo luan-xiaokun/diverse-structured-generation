@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 2
 current_phase_name: Feasible Multi-Obligation Search
-status: executing
-stopped_at: Completed 01.1-07-PLAN.md
-last_updated: "2026-07-24T07:30:48.730Z"
-last_activity: 2026-07-24
-last_activity_desc: Phase 01.1 complete, transitioned to Phase 2
+status: planning
+stopped_at: Phase 1 and 01.1 complete; Phase 2 awaiting discussion and planning
+last_updated: "2026-10-05T07:58:30.858Z"
+last_activity: 2026-10-05
+last_activity_desc: Refreshed project state and exported HANDOFF.md
 progress:
   total_phases: 6
   completed_phases: 2
@@ -24,22 +24,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-23)
 
 **Core value:** 在保持 DFA 约束正确性的前提下，以少量、自然且互补的测试样本显著提高结构化生成输出的 DFA 覆盖。
-**Current focus:** Phase 01.1 — Repair tokenizer vocabulary and byte-DFA contract
+**Current focus:** Phase 2 — Feasible Multi-Obligation Search (awaiting discussion and planning)
 
 ## Current Position
 
 Phase: 2 — Feasible Multi-Obligation Search
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-24 — Phase 01.1 complete, transitioned to Phase 2
+Plan: Not created; implementation not started
+Status: Ready to discuss and plan
+Last activity: 2026-10-05 — Refreshed project state and exported HANDOFF.md
 
-Progress: [██░░░░░░░░] 17%
+Progress: 2/6 phases complete (33%, including inserted Phase 01.1); 10/10 existing phase plans complete. Phase 2–5 plans are not yet created, so this is not an estimate of research effort completed.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total phase plans completed: 10 (Phase 1: 3; Phase 01.1: 7)
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +47,7 @@ Progress: [██░░░░░░░░] 17%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
+| 1 | 3 | - | - |
 | 01.1 | 7 | - | - |
 
 **Recent Trend:**
@@ -84,16 +85,28 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 01.1]: Classify only selected-baseline missing obligations before reachable-only witness selection. — Preserves the locked D-14 through D-17 witness-selection contract.
 - [Phase 01.1]: Treat the initial DFA state as the first ordered event for direct/token parity. — Direct get_state_sequence includes the initial state.
 - [Phase 01.1]: Run locked Qwen parity only after provisioning and under HF_HUB_OFFLINE=1. — Preserves immutable tokenizer evidence without online fallback.
+- [Experiment semantics]: Obligations are only DFA structures not visited by replay of the selected baseline samples; the structure catalog itself is not the missing-obligation set.
+- [Experiment semantics]: --sample-num selects the baseline sample prefix; --obligation-num/--ob-num caps reachable targets attempted. JSONL contains attempted witness certificates only.
+- [Post-phase fix d5618da]: Count matching accepting actions by indexing supplied missing meanings and scanning actions once; preserve classification and per-action count semantics.
 
 ### Pending Todos
 
-None yet.
+- Discuss Phase 2, then research and plan multi-obligation grouping/search before implementation.
+- Register the real_case_parity pytest marker (non-blocking warning recorded in Phase 01.1 verification).
 
 ### Blockers/Concerns
 
 - Phase 2 must make the dominance relation, cap policy, and small-instance oracle concrete against the parent DFA API.
 - Phase 4 needs a pinned model/tokenizer and a disclosed length-matched naturalness protocol.
 - Phase 5 must freeze the development/held-out case-study split before final comparisons.
+- Verification and CSS timing below are historical July 2026 evidence; tests were not rerun during this documentation refresh.
+- PROJECT.md and generated AGENTS.md/codebase sections contain initialization-era descriptions. For current implementation, use HANDOFF.md, the completed phase summaries, and source code.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 261005-m6r | Refresh project state and export AIAP handoff | 2026-10-05 | See task summary and git log | [261005-m6r-refresh-project-state-and-export-aiap-ha](./quick/261005-m6r-refresh-project-state-and-export-aiap-ha/) |
 
 ### Roadmap Evolution
 
@@ -108,6 +121,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-24T07:23:07.318Z
-Stopped at: Completed 01.1-07-PLAN.md
-Resume file: None
+Last session: 2026-10-05T07:58:30.858Z
+Stopped at: Phase 1 and 01.1 complete; Phase 2 awaiting discussion and planning
+Resume file: [HANDOFF.md](../HANDOFF.md)
+Next command: `$gsd-discuss-phase 2` from the `aiap/` project root.
