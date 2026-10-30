@@ -96,12 +96,14 @@ double wd_shift_kernel_core(const char *s1, int l1, const char *s2, int l2,
     kmer_buffer[k] = '\0';
 
     KmerEntry *entry = NULL;
-    HASH_FIND_STR(kmer_table, kmer_buffer, entry);
+    HASH_FIND(hh, kmer_table, kmer_buffer, k, entry);
     if (!entry) {
       entry = (KmerEntry *)malloc(sizeof(KmerEntry));
-      entry->kmer = strdup(kmer_buffer);
+      // k-mers are binary UTF-8 bytes: embedded NUL must not truncate keys.
+      entry->kmer = (char *)malloc(k + 1);
+      memcpy(entry->kmer, kmer_buffer, k + 1);
       init_pos_list(&entry->pos_list);
-      HASH_ADD_KEYPTR(hh, kmer_table, entry->kmer, strlen(entry->kmer), entry);
+      HASH_ADD_KEYPTR(hh, kmer_table, entry->kmer, k, entry);
     }
     add_position(&entry->pos_list, 0);
 
@@ -118,13 +120,14 @@ double wd_shift_kernel_core(const char *s1, int l1, const char *s2, int l2,
       kmer_buffer[k - 1] = s1[i + k - 1];
       kmer_buffer[k] = '\0';
 
-      HASH_FIND_STR(kmer_table, kmer_buffer, entry);
+      HASH_FIND(hh, kmer_table, kmer_buffer, k, entry);
       if (!entry) {
         entry = (KmerEntry *)malloc(sizeof(KmerEntry));
-        entry->kmer = strdup(kmer_buffer);
+        // k-mers are binary UTF-8 bytes: embedded NUL must not truncate keys.
+        entry->kmer = (char *)malloc(k + 1);
+        memcpy(entry->kmer, kmer_buffer, k + 1);
         init_pos_list(&entry->pos_list);
-        HASH_ADD_KEYPTR(hh, kmer_table, entry->kmer, strlen(entry->kmer),
-                        entry);
+        HASH_ADD_KEYPTR(hh, kmer_table, entry->kmer, k, entry);
       }
       add_position(&entry->pos_list, i);
     }
@@ -156,7 +159,7 @@ double wd_shift_kernel_core(const char *s1, int l1, const char *s2, int l2,
     kmer_buffer[k] = '\0';
 
     KmerEntry *entry = NULL;
-    HASH_FIND_STR(kmer_table, kmer_buffer, entry);
+    HASH_FIND(hh, kmer_table, kmer_buffer, k, entry);
     if (entry) {
       PositionList *plist1 = &entry->pos_list;
       for (size_t p_idx = 0; p_idx < plist1->count; ++p_idx) {
@@ -181,7 +184,7 @@ double wd_shift_kernel_core(const char *s1, int l1, const char *s2, int l2,
       kmer_buffer[k] = '\0';
 
       entry = NULL;
-      HASH_FIND_STR(kmer_table, kmer_buffer, entry);
+      HASH_FIND(hh, kmer_table, kmer_buffer, k, entry);
       if (entry) {
         PositionList *plist1 = &entry->pos_list;
         for (size_t p_idx = 0; p_idx < plist1->count; ++p_idx) {

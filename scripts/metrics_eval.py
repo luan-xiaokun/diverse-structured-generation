@@ -50,7 +50,7 @@ def make_metric_line_plot(
     lns1 = ax1.plot(range(0, len(inputs)), state_cov, label="State Coverage")
     lns2 = ax1.plot(range(0, len(inputs)), transition_cov, label="Transition Coverage")
     lns3 = ax2.plot(
-        range(0, len(inputs), 20),
+        list(range(20, len(inputs), 20)) + [len(inputs)],
         vendi_trace,
         label="Vendi Score",
         color="orange",

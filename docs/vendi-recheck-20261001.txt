@@ -1,0 +1,99 @@
+Vendi 核与重评说明 — 2026-10-01
+=============================
+
+结论
+----
+Qwen2.5-1.5B / JSON / DG+ / T=1.3 / seed=44：Vendi 0 → 121.24465296577031。
+原始500条样本、顺序、重复字符串、seed和所有生成配置均保留。
+五seed均值±样本标准差：99.156415±55.689751 → 123.405345±5.505358。
+修正后该点均值的点态t 95% CI：[116.569540, 130.241150]，n=5，df=4。
+
+根因与证据
+----------
+原样本索引437（从0开始）含真实NUL字节，不是文本形式的反斜杠转义。
+C核把k-mer作为以NUL结束的字符串，通过strlen、strdup和HASH_FIND_STR
+存储和查找；这会截断字节子串，并把不同长度的子串混入同一哈希键。
+修复用显式k长度的二进制键、malloc/memcpy和HASH_FIND。
+原始服务器.so的500×500核矩阵K/n最小特征值为−1.389413e-6；修复后
+为−7.818019e-17。包含问题样本及前20条的子矩阵与独立NumPy参考实现的
+最大差为3.410605e-13。最小回归输入如['a','a\0','\0a']即可证明旧C与参考核不一致。
+
+评价定义
+--------
+所有正式重评使用历史已执行参数WD-shift degree=5、shift=1，以UTF-8字节
+构造子串；不得改为degree=3或shift=3。旧计算先求K/n特征值，再给每个
+特征值加1e-10，传入会再次按总和归一化的scipy.stats.entropy。
+因此历史数值实际是原始WD核的trace归一化谱熵，即有效秩。
+本次保留这一口径：p_i=lambda_i/sum(lambda)，score=exp(−sum p_i log p_i)。
+不引入逐样本单位对角线归一化，不改变长度对核自相似度的权重。
+Vendi作者的标准定义要求k(x,x)=1；原始WD核不满足此条件，论文应准确称为
+“trace-normalized WD-kernel spectral diversity (Vendi-style effective rank)”
+并给出上述公式，避免暗示与单位对角线的标准Vendi完全相同。
+来源：https://github.com/vertaix/Vendi-Score （作者说明，2026-10-01查阅）。
+
+去掉人为epsilon，按0 log 0=0计算。仅截断数值误差范围内的负特征值；
+容差=128×float64机器epsilon×n×max(abs(eigenvalues))。
+明显非PSD、非对称、非有限或零trace矩阵报错，不输出0作为实际多样性。
+空样本集合的标量返回0，曲线返回空列表；正式run均为500条，不受此约定影响。
+同时修正prefix函数漏掉可整除的最终预算点的问题及CLI图的横轴对应。
+本次正式趋势沿用原评估记录中的50、100、…、500样本预算。
+
+统一重评范围
+------------
+Group1 270、Group2 360、Group3 300、EOS初始45、新EOS30：1005个正式视图，
+按原始result.json SHA去重为915份结果，共457500条已保存样本（含重复值）。
+全部915份结果和各视图的原评估prefix已重评；输入SHA全部验证。
+只有3份结果含NUL，均在Group3：上述JSON，以及T=2/seed46的No-bomb
+Outlines和DG+；后两者Vendi分别458.327987→458.328318、470.172601→470.194626。
+其余变化是去除epsilon后的数值微差。唯一旧值为0的正式视图已恢复。
+没有删除seed，没有重跑LLM，也没有改变coverage、Distinct、拒绝率、token成本。
+已重建各组均值、SD、CI、配对差值、曲线、主表LaTeX和参数/温度图。
+结构coverage的54项候选检验不受影响，重算仍为13项t+Holm54通过。
+
+历史对照的材料缺口
+------------------
+当前包只有更早版本的一些汇总，没有对应全部原始样本。
+当前Group1/2/3和EOS的1005个视图全部完成重评。
+较早DG+控制中，Qwen1.5B T=1样本在Group2参考点已保留并能重评。
+其余60个Group1历史控制Vendi差值、120个Group3历史控制Vendi差值共180行，
+保留原值于original_difference及独立pending清单，difference/汇总均值标为null；
+所有seed行仍在，n=5没有改变。这些历史Vendi比较不能混入已统一重评的正文结论。
+其他历史控制指标、当前DG+/DG/Outlines比较都照常可用。
+要恢复这180行，只需服务器提供对应较早result.json，无需重跑生成。
+
+服务器代码同步与重评
+--------------------
+修复基于eos-reentry代码67ead252ad20529d29111f07687b99fd06870ba2。
+使用随包提供的vendi-fix-20261001.bundle导入修复分支并cherry-pick修复提交；
+也可用补丁审查后应用。不要把本机其他CFG开发修改带到实验服务器。
+在服务器的实验代码仓库中：
+  git fetch /path/to/vendi-fix-20261001.bundle vendi-fix-20261001
+  git cherry-pick FETCH_HEAD
+  uv run python scripts/build_wd_kernel.py --clean --copy-to-package
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 uv run python -m pytest tests/test_vendi_regression.py tests/test_metrics.py tests/test_string_kernel.py tests/test_metrics_eval_output.py -q --no-cov
+编译后的.so不是跨机器部署材料；应在服务器重新构建。
+使用新的Python评估进程，以免旧进程仍加载旧.so。
+
+重评本批可解开的服务器包：
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 uv run python scripts/reassess_vendi.py --package /path/to/groups1-4-latest-results-20260930-v1 --output /path/to/vendi-recheck-20261001 --workers 8
+输出unique/（915个去重核诊断和prefix）、evaluations/（对应原包的1005个正式
+评价文件）、ledger.json（旧值、新值、原始输入SHA、新评价SHA）、verification.json。
+输出与输入分开，不改result.json、attempts.jsonl、配置或原evaluation.json。
+可中断后以相同命令恢复；恢复也检查输入SHA。
+
+服务器正在进行的额外seed实验，沿用degree=5、shift=1及上述新函数。
+已完成部分只重评保存的样本；汇总前应让全部seed使用同一版核和谱熵实现。
+对于原main-matrix目录结构，可将evaluate_main_matrix.py的--data-root指向
+保存样本目录，--output-dir指向新的日期目录，使用-d 5 -s 1 --step 50。
+其他封装任务应通过原有单run评估入口重评，不混合旧、新Vendi。
+
+写作材料如何使用
+----------------
+fac-writing-materials-20261001-v2替代同日期v1作为写作输入。
+data/、tables/、plots/、statistics/是本次修正后的派生材料。
+reevaluation/ledger.csv给出逐视图前后差值，reevaluation/unique/保留谱诊断。
+reevaluation/evaluations/下文件相对路径与原包一致。
+raw/中的原压缩包完整保留，因此其中原evaluation仍是旧评价，应结合新overlay读。
+原服务器SHA校验报告用于原包；v2包内SHA256SUMS用于修正后的写作材料。
+Figure1是真实库coverage曲线，不含Vendi，其内容和测量结果保留。
+HANDOFF.txt含全部实验如何执行、数据单位、方法比较和论文使用说明。

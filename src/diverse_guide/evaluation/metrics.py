@@ -10,7 +10,6 @@ and by the test suite directly.
 from collections.abc import Callable
 
 import numpy as np
-from scipy.stats import entropy
 
 from regex_dfa_guide import DiverseGuideDFA
 
@@ -160,21 +159,53 @@ def vendi_score(
         If given, returns a list of scores computed on growing prefixes of *inputs*
         (in steps of *step_size*) instead of a single final score.
     """
-    gram_mtx = kernel_mtx_func(inputs)
+    if step_size is not None and step_size <= 0:
+        raise ValueError("step_size must be positive")
+    if not inputs:
+        return 0.0 if step_size is None else []
+    gram_mtx = np.asarray(kernel_mtx_func(inputs), dtype=np.float64)
+    if gram_mtx.shape != (len(inputs), len(inputs)):
+        raise ValueError("kernel matrix shape does not match inputs")
     if step_size is None or step_size == len(inputs):
-        eigenvalues = np.linalg.eigvalsh(gram_mtx / len(inputs))
-        return float(np.exp(entropy(eigenvalues + 1e-10)))
+        return vendi_from_kernel(gram_mtx)
+    endpoints = list(range(step_size, len(inputs), step_size)) + [len(inputs)]
+    return [vendi_from_kernel(gram_mtx[:i, :i]) for i in endpoints]
 
-    vendi_trace = []
-    for i in range(step_size, len(inputs), step_size):
-        vendi_trace.append(
-            float(np.exp(entropy(np.linalg.eigvalsh(gram_mtx[:i, :i] / i) + 1e-10)))
+
+def vendi_from_kernel(gram_mtx: np.ndarray) -> float:
+    """Effective rank of a PSD kernel, retaining historical trace normalization.
+
+    This is spectral entropy of K / trace(K). It equals standard Vendi for
+    unit-diagonal kernels; raw WD kernels also weight samples by self-similarity.
+    Do not add epsilon to the spectrum: 0 log 0 is exactly zero. Materially
+    indefinite kernels are errors, never a zero-diversity measurement.
+    """
+    matrix = np.asarray(gram_mtx, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("kernel matrix must be square")
+    n = len(matrix)
+    if not n:
+        return 0.0
+    if not np.isfinite(matrix).all():
+        raise ValueError("kernel matrix must be finite")
+    scale = float(np.max(np.abs(matrix)))
+    tolerance = 128 * np.finfo(np.float64).eps * n * scale
+    if np.max(np.abs(matrix - matrix.T)) > tolerance:
+        raise ValueError("kernel matrix must be symmetric")
+    spectrum = np.linalg.eigvalsh((matrix + matrix.T) * 0.5)
+    spectral_scale = float(np.max(np.abs(spectrum)))
+    tolerance = 128 * np.finfo(np.float64).eps * n * spectral_scale
+    if spectrum[0] < -tolerance:
+        raise ValueError(
+            f"kernel matrix must be positive semidefinite: minimum eigenvalue "
+            f"{spectrum[0]:.6g}, roundoff tolerance {tolerance:.6g}"
         )
-    if len(inputs) % step_size != 0:
-        vendi_trace.append(
-            float(np.exp(entropy(np.linalg.eigvalsh(gram_mtx / len(inputs)) + 1e-10)))
-        )
-    return vendi_trace
+    spectrum = np.maximum(spectrum, 0.0)
+    mass = float(spectrum.sum())
+    if mass <= 0:
+        raise ValueError("kernel matrix must have positive trace")
+    probabilities = spectrum[spectrum > 0] / mass
+    return float(np.exp(-np.sum(probabilities * np.log(probabilities))))
 
 
 def distinct_ngram(inputs: list[str], n: int) -> tuple[int, int]:
