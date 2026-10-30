@@ -292,3 +292,12 @@ Cargo.lock
 data/
 logs/
 results/
+
+# Experiment data bundles and artifacts
+exports/
+artifacts/
+*.tar.gz
+*.tar.zst
+.worktrees/
+.codex
+.local/
