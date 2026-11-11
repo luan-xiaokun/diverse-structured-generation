@@ -23,7 +23,7 @@ keywords:
   - automata
   - diversity
 license: MIT
-version: 0.2.0
+version: 0.3.0
 repository-code: "https://github.com/luan-xiaokun/diverse-structured-generation"
 url: "https://github.com/luan-xiaokun/diverse-structured-generation"
 preferred-citation:
@@ -58,8 +58,7 @@ preferred-citation:
     date-end: "2025-11-13"
   publisher:
     name: "Springer"
-    location: "Singapore"
-  year: 2026
+  year: 2025
   date-published: "2025-11-11"
   volume: 16229
   start: 22

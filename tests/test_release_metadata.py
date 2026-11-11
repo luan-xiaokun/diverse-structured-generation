@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "0.2.0"
+EXPECTED_VERSION = "0.3.0"
 EXPECTED_LICENSE = "MIT"
 EXPECTED_TITLE = (
     "DiverseGuide: Automata-Based Steering for Diverse Structured Generation"

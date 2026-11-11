@@ -1,6 +1,6 @@
 # DiverseGuide
 
-![Version](https://img.shields.io/badge/version-v0.2.0-blue)
+![Version](https://img.shields.io/badge/version-v0.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 **OSP title:** DiverseGuide: Automata-Based Steering for Diverse Structured Generation
