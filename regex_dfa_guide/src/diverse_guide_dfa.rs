@@ -500,10 +500,12 @@ impl DfaIndex {
         state: StateId,
         token_id: TokenId,
     ) -> Option<&AllowedTokenInfo> {
-        self.allowed_token_infos
-            .get(&state)?
-            .iter()
-            .find(|info| info.token_id == token_id)
+        // allowed token metadata is sorted by token id at construction time
+        let infos = self.allowed_token_infos.get(&state)?;
+        infos
+            .binary_search_by_key(&token_id, |info| info.token_id)
+            .ok()
+            .map(|idx| &infos[idx])
     }
 
     fn compute_byte_state_sequence(
@@ -723,6 +725,81 @@ impl DiverseGuideDFA {
             current_state = next_state;
         }
         Ok(())
+    }
+
+    /// Commit one completed sample, given as generated token ids, to the global
+    /// path counter.
+    ///
+    /// The sample is counted only if every token follows an allowed transition
+    /// and the sequence ends in an accepting state. Tokens after the first EOS
+    /// (e.g. batch padding) are ignored, and the EOS transition is counted
+    /// exactly once whether or not it was generated. Returns `false` and
+    /// leaves the counter untouched for invalid or unfinished samples.
+    pub fn commit_valid_token_path(&mut self, token_ids: &[TokenId]) -> Result<bool> {
+        let mut current_state = self.index.initial_state;
+        let mut edge_indices = Vec::new();
+        let mut saw_eos = false;
+
+        for &token_id in token_ids {
+            let Some(info) = self.index.find_allowed_token_info(current_state, token_id) else {
+                return Ok(false);
+            };
+            edge_indices.extend_from_slice(&info.edge_indices);
+            current_state = info.next_state;
+            if token_id == self.index.eos_token_id {
+                saw_eos = true;
+                break;
+            }
+        }
+
+        self.commit_completed_edges(current_state, edge_indices, saw_eos)
+    }
+
+    /// Commit one completed sample, given as text, to the global path counter.
+    ///
+    /// Same acceptance rule as [`Self::commit_valid_token_path`], but the path
+    /// is recovered by replaying the string's bytes through the DFA.
+    pub fn commit_valid_string(&mut self, string: &str) -> Result<bool> {
+        let mut current_state = self.index.initial_state;
+        let mut edge_indices = Vec::new();
+
+        for byte in string.as_bytes() {
+            let Ok(next_state) = self.index.get_next_byte_state(current_state, *byte) else {
+                return Ok(false);
+            };
+            if let Some(&edge_idx) = self.index.edge_to_idx.get(&(current_state, next_state)) {
+                edge_indices.push(edge_idx);
+            }
+            current_state = next_state;
+        }
+
+        self.commit_completed_edges(current_state, edge_indices, false)
+    }
+
+    fn commit_completed_edges(
+        &mut self,
+        end_state: StateId,
+        mut edge_indices: Vec<usize>,
+        saw_eos: bool,
+    ) -> Result<bool> {
+        if !self.index.is_final_state(end_state) {
+            return Ok(false);
+        }
+        if !saw_eos {
+            let eos_token_id = self.index.eos_token_id;
+            let eos_info = self
+                .index
+                .find_allowed_token_info(end_state, eos_token_id)
+                .ok_or(Error::NoTokenTransitionFound(
+                    end_state as usize,
+                    eos_token_id as usize,
+                ))?;
+            edge_indices.extend_from_slice(&eos_info.edge_indices);
+        }
+        for edge_idx in edge_indices {
+            self.path_counter[edge_idx] += 1;
+        }
+        Ok(true)
     }
 
     pub fn update_local_state_counter(&mut self, state: StateId, token_id: TokenId) -> Result<()> {
@@ -1380,6 +1457,134 @@ mod tests {
             dfa.index.state_to_idx.get(&final_state),
             eos_info.state_indices.first()
         );
+    }
+
+    fn reward_count(dfa: &DiverseGuideDFA, state: u32, token_id: TokenId) -> u32 {
+        counts_by_token(dfa, state)
+            .get(&token_id)
+            .expect("token must be allowed from state")
+            .0
+    }
+
+    fn all_reward_counts_zero(dfa: &DiverseGuideDFA, state: u32) -> bool {
+        counts_by_token(dfa, state)
+            .values()
+            .all(|(reward, _)| *reward == 0)
+    }
+
+    #[test]
+    fn commit_valid_token_path_updates_only_complete_valid_sequences() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        assert!(!dfa
+            .commit_valid_token_path(&[1])
+            .expect("valid prefix should not fail"));
+        assert!(all_reward_counts_zero(&dfa, initial));
+
+        assert!(dfa
+            .commit_valid_token_path(&[3])
+            .expect("complete token path should commit"));
+        assert_eq!(reward_count(&dfa, initial, 3), 1);
+        assert_eq!(reward_count(&dfa, initial, 1), 1);
+    }
+
+    #[test]
+    fn commit_valid_token_path_is_atomic_for_invalid_tokens() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        assert!(!dfa
+            .commit_valid_token_path(&[1, 4])
+            .expect("invalid token sequence should return false"));
+        assert!(all_reward_counts_zero(&dfa, initial));
+    }
+
+    #[test]
+    fn commit_valid_token_path_counts_eos_once_and_ignores_padding() {
+        let mut implicit_eos = toy_dfa();
+        let mut explicit_eos = toy_dfa();
+        let mut padded = toy_dfa();
+        let initial = implicit_eos.get_initial_state();
+        let final_state = implicit_eos
+            .get_next_token_state(initial, 3)
+            .expect("ab token should be valid");
+
+        assert!(implicit_eos
+            .commit_valid_token_path(&[3])
+            .expect("implicit EOS path should commit"));
+        assert!(explicit_eos
+            .commit_valid_token_path(&[3, 999])
+            .expect("explicit EOS path should commit"));
+        assert!(padded
+            .commit_valid_token_path(&[1, 2, 999, 4, 4])
+            .expect("tokens after EOS should be ignored"));
+
+        let implicit_counts = counts_by_token(&implicit_eos, final_state);
+        assert_eq!(implicit_counts.get(&999).map(|c| c.0), Some(1));
+        assert_eq!(implicit_counts, counts_by_token(&explicit_eos, final_state));
+        assert_eq!(implicit_counts, counts_by_token(&padded, final_state));
+    }
+
+    #[test]
+    fn commit_valid_string_matches_token_commit_for_complete_strings() {
+        let mut from_string = toy_dfa();
+        let mut from_tokens = toy_dfa();
+        let initial = from_string.get_initial_state();
+        let final_state = from_string
+            .get_next_token_state(initial, 3)
+            .expect("ab token should be valid");
+
+        assert!(from_string
+            .commit_valid_string("ab")
+            .expect("complete string should commit"));
+        assert!(from_tokens
+            .commit_valid_token_path(&[1, 2])
+            .expect("complete token path should commit"));
+
+        assert_eq!(
+            counts_by_token(&from_string, initial),
+            counts_by_token(&from_tokens, initial)
+        );
+        assert_eq!(
+            counts_by_token(&from_string, final_state),
+            counts_by_token(&from_tokens, final_state)
+        );
+        assert_eq!(reward_count(&from_string, final_state, 999), 1);
+    }
+
+    #[test]
+    fn commit_valid_string_skips_prefixes_and_invalid_strings() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        assert!(!dfa
+            .commit_valid_string("a")
+            .expect("prefix should not fail"));
+        assert!(!dfa
+            .commit_valid_string("ax")
+            .expect("invalid string should not fail"));
+        assert!(!dfa
+            .commit_valid_string("abb")
+            .expect("overlong string should not fail"));
+        assert!(all_reward_counts_zero(&dfa, initial));
+    }
+
+    #[test]
+    fn update_path_counter_keeps_raw_replay_semantics() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        let final_state = dfa
+            .get_next_token_state(initial, 3)
+            .expect("ab token should be valid");
+
+        dfa.update_path_counter("a")
+            .expect("prefix replay should succeed");
+        assert_eq!(reward_count(&dfa, initial, 1), 1);
+
+        dfa.update_path_counter("ab")
+            .expect("full replay should succeed");
+        assert_eq!(reward_count(&dfa, final_state, 999), 0);
     }
 
     #[test]

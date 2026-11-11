@@ -49,6 +49,14 @@ class DiverseGuideDFA:
         """Updates the path counter for the given string."""
         ...
 
+    def commit_valid_token_path(self, token_ids: list[int]) -> bool:
+        """Commits a completed sample's token path if it is valid and accepted."""
+        ...
+
+    def commit_valid_string(self, string: str) -> bool:
+        """Commits a completed sample's string path if it is a full match."""
+        ...
+
     def update_local_state_counter(self, state: int, token_id: int) -> None:
         """Updates the local state counter after generating a new token."""
         ...

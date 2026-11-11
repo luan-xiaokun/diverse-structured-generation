@@ -479,6 +479,69 @@ def test_generate_batch_updates_path_counter(mock_tokenizer):
     assert sum(reward_after) > 0
 
 
+def _reward_by_token(proc, state):
+    token_ids, reward_counts, _ = proc.dfa.compute_counts(state)
+    return dict(zip(token_ids, reward_counts, strict=True))
+
+
+def test_generate_batch_skips_unfinished_samples(mock_tokenizer):
+    """Samples cut off before an accepting state do not update path counters."""
+    tok = _BatchTokenizerMock(mock_tokenizer)
+    proc = DiverseRegexLogitsProcessor("ab", tok, gamma=0.0, beta=1.0)
+    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
+    initial = proc.dfa.get_initial_state()
+
+    assert adapter.generate_batch("prompt", n=2, max_tokens=1) == ["a", "a"]
+    assert all(c == 0 for c in _reward_by_token(proc, initial).values())
+
+    assert adapter.generate_batch("prompt", n=2, max_tokens=3) == ["ab", "ab"]
+    assert _reward_by_token(proc, initial)[10] == 2
+
+
+def test_generate_batch_counts_eos_transition_once(mock_tokenizer):
+    """The final EOS transition is counted once per completed sample."""
+    tok = _BatchTokenizerMock(mock_tokenizer)
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
+    final_state = proc.guide.get_next_state(proc.guide.initial_state, 10)
+
+    # max_tokens=1 stops before EOS; max_tokens=4 emits EOS and then padding.
+    adapter.generate_batch("prompt", n=2, max_tokens=1)
+    adapter.generate_batch("prompt", n=2, max_tokens=4)
+
+    assert _reward_by_token(proc, final_state)[99] == 4
+
+
+def test_update_generated_content_counts_only_full_matches(mock_tokenizer):
+    tok = _BatchTokenizerMock(mock_tokenizer)
+    proc = DiverseRegexLogitsProcessor("ab", tok, gamma=0.0, beta=1.0)
+    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
+    initial = proc.dfa.get_initial_state()
+    final_state = proc.dfa.get_state_sequence("ab")[-1]
+
+    for text in ["a", "ax", "abb", ""]:
+        adapter.update_generated_content(text)
+    assert all(c == 0 for c in _reward_by_token(proc, initial).values())
+
+    adapter.update_generated_content("ab")
+    assert _reward_by_token(proc, initial)[10] == 1
+    assert _reward_by_token(proc, final_state)[99] == 1
+
+
+def test_python_reference_counts_only_full_matches():
+    tok = _CoverageTokenizer(pad_token_id=None)
+    proc = gp.DiverseRegexLogitsProcessor("[ab]b", tok, gamma=0.5, beta=3.0)
+    adapter = gp.StatefulSequenceGeneratorAdapter(_CoverageModel(), tok, proc)
+
+    for text in ["a", "ax", "abb"]:
+        adapter.update_generated_content(text)
+    assert sum(proc.transition_counter.values()) == 0
+
+    adapter.update_generated_content("ab")
+    final_state = proc.guide.dfa.get_state_sequence("ab")[-1]
+    assert proc.transition_counter[(final_state, final_state)] == 1
+
+
 def test_generate_batch_resets_local_counter(mock_tokenizer):
     """generate_batch resets local_state_counter before each call."""
     n = 2

@@ -376,8 +376,8 @@ diversity adjustment and is used as the internal comparison baseline.
 | Method | Description |
 |--------|-------------|
 | `__call__(prompt, max_tokens)` | Generate one sequence |
-| `generate_batch(prompt, n, max_tokens)` | Generate `n` sequences; updates path counters after each |
-| `update_generated_content(text)` | Manually update the path counter with an externally generated string |
+| `generate_batch(prompt, n, max_tokens)` | Generate `n` sequences; updates path counters from each completed valid sequence |
+| `update_generated_content(text)` | Manually update the path counter with an externally generated string; only full regex matches are counted |
 
 ### Parameters
 

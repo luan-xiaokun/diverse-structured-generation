@@ -112,6 +112,16 @@ impl PyDiverseGuideDFA {
         Ok(())
     }
 
+    fn commit_valid_token_path(&self, token_ids: Vec<u64>) -> PyResult<bool> {
+        let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
+        Ok(dfa_guard.commit_valid_token_path(&token_ids)?)
+    }
+
+    fn commit_valid_string(&self, string: &str) -> PyResult<bool> {
+        let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
+        Ok(dfa_guard.commit_valid_string(string)?)
+    }
+
     fn update_local_state_counter(&self, state: u32, token_id: u64) -> PyResult<()> {
         let mut dfa_guard = self.0.write().map_err(map_poison_error_to_pyerr)?;
         dfa_guard.update_local_state_counter(state, token_id)?;

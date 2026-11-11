@@ -374,7 +374,9 @@ class StatefulSequenceGeneratorAdapter:
     stateful generation.
 
     Maintains a cross-call path counter so that successive calls (or batches)
-    are diversified relative to all previously generated sequences.
+    are diversified relative to previously completed valid sequences. Samples
+    that do not reach an accepting DFA state (e.g. cut off by ``max_tokens``)
+    are not counted.
 
     Typical usage::
 
@@ -480,7 +482,11 @@ class StatefulSequenceGeneratorAdapter:
             new_ids = output_ids[i, prompt_len:]
             text = self.tokenizer.decode(new_ids, skip_special_tokens=True)
             results.append(text)
-            self.logits_processor.dfa.update_path_counter(text)
+            # Count the generated token path itself (not a re-decoded string),
+            # and only for samples that completed in an accepting state.
+            self.logits_processor.dfa.commit_valid_token_path(
+                [int(token_id) for token_id in new_ids]
+            )
 
         return results
 
@@ -491,8 +497,12 @@ class StatefulSequenceGeneratorAdapter:
         :meth:`__call__` directly, so that subsequent calls are diversified
         relative to *generated_content*.  Not needed when using
         :meth:`generate_batch`, which updates counters automatically.
+
+        Only strings that fully match the regex are counted, including the
+        final end-of-sequence transition; other strings leave the counter
+        unchanged.
         """
-        self.logits_processor.dfa.update_path_counter(generated_content)
+        self.logits_processor.dfa.commit_valid_string(generated_content)
 
 
 class DiverseGuide(StatefulSequenceGeneratorAdapter):

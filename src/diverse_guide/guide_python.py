@@ -268,10 +268,19 @@ class StatefulSequenceGeneratorAdapter:
         *generated_content*.
 
         Must be called after each successful :meth:`__call__` so that subsequent
-        calls are diversified relative to *generated_content*.
+        calls are diversified relative to *generated_content*. Only strings that
+        fully match the regex are counted, including the final end-of-sequence
+        transition, mirroring the Rust-backed implementation.
         """
-        dfa = self.logits_processor.guide.dfa
-        states = list(dfa.get_state_sequence(generated_content))
+        guide = self.logits_processor.guide
+        dfa = guide.dfa
+        try:
+            states = list(dfa.get_state_sequence(generated_content))
+        except ValueError:
+            return
+        if not states or not dfa.is_final_state(states[-1]):
+            return
+        states.extend(dfa.get_byte_state_sequence(states[-1], guide.eos_token_id)[1:])
         transitions = list(zip(states, states[1:]))
         for state in states:
             self.logits_processor.state_counter[state] += 1
