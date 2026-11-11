@@ -41,11 +41,11 @@ Shared defaults such as the grammar list and model names live in
 | Experiment | Role | Linux / macOS | Windows | Output or reference |
 |-----------|------|----------------|---------|---------------------|
 | Sample generation | OSP primary reproduction input | `1_generation.sh` | `1_generation.ps1` | `data/diverse/{model}/`, `data/baseline/{model}/` |
-| Diversity evaluation | OSP primary reproduction result | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | `artifact-results/v0.2.0/primary/diversity.csv` |
-| Efficiency evaluation | OSP primary reproduction result | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | `artifact-results/v0.2.0/primary/runtime.csv` |
+| Diversity evaluation | OSP primary reproduction result | `2_diversity_evaluation.sh` | `2_diversity_evaluation.ps1` | `artifact-results/v0.3.0/primary/diversity.csv` |
+| Efficiency evaluation | OSP primary reproduction result | `3_efficiency_evaluation.sh` | `3_efficiency_evaluation.ps1` | `artifact-results/v0.3.0/primary/runtime.csv` |
 | Case study | Optional automated impact check | `case_study/` | `case_study/` | Generated locally as `case_study_summary.json` |
-| Temperature ablation | Optional extended ICFEM analysis | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | `artifact-results/v0.2.0/optional/temperature_ablation.csv` |
-| Component ablation | Optional extended ICFEM analysis | `5_component_ablation.sh` | `5_component_ablation.ps1` | `artifact-results/v0.2.0/optional/component_ablation.csv` |
+| Temperature ablation | Optional extended ICFEM analysis | `4_temperature_ablation.sh` | `4_temperature_ablation.ps1` | `artifact-results/v0.3.0/optional/temperature_ablation.csv` |
+| Component ablation | Optional extended ICFEM analysis | `5_component_ablation.sh` | `5_component_ablation.ps1` | `artifact-results/v0.3.0/optional/component_ablation.csv` |
 
 Note: temperature ablation additionally requires `microsoft/Phi-4-mini-instruct`
 for perplexity evaluation.
@@ -74,8 +74,8 @@ Approximate runtime on a single GPU:
 - `1_generation.*`: about 1 hour
 - `2_diversity_evaluation.*`: usually a few minutes
 - `3_efficiency_evaluation.*`: about 1 hour
-- `4_temperature_ablation.*`: usually a few minutes to moderate runtime,
-  depending on model loading and perplexity evaluation
+- `4_temperature_ablation.*`: about 1 hour of generation (it regenerates all
+  samples at temperature 1.5), plus perplexity evaluation
 - `5_component_ablation.*`: about 1 hour
 
 Outputs:
@@ -99,7 +99,7 @@ For OSP primary reproduction:
    - `uv run python scripts/collect_results.py --experiment diversity`
    - `uv run python scripts/collect_results.py --experiment runtime`
 5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
-   with `artifact-results/v0.2.0/primary/`.
+   with `artifact-results/v0.3.0/primary/`.
 
 For the optional automated impact check:
 
@@ -118,7 +118,7 @@ For optional extended ICFEM reproduction:
 4. Collect optional CSV summaries:
    - `uv run python scripts/collect_results.py --experiment temperature_ablation`
    - `uv run python scripts/collect_results.py --experiment component_ablation`
-5. Compare optional CSV summaries with `artifact-results/v0.2.0/optional/`.
+5. Compare optional CSV summaries with `artifact-results/v0.3.0/optional/`.
 
 ## Minimal Sanity Check
 
@@ -238,11 +238,11 @@ results/
     component_ablation.csv
 ```
 
-Author reference CSVs for the v0.2.0 snapshot are tracked under
-`artifact-results/v0.2.0/`:
+Author reference CSVs are tracked under
+`artifact-results/v0.3.0/`:
 
 ```text
-artifact-results/v0.2.0/
+artifact-results/v0.3.0/
   primary/
     diversity.csv
     runtime.csv

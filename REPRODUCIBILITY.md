@@ -16,8 +16,10 @@ to each other.
 
 The repository supports three levels of reproduction:
 
-1. Environment and implementation checks that do not load a language model.
-2. OSP primary reproduction for the manuscript's main artifact claims.
+1. Environment and implementation checks that do not load a language model
+   (these run on a CPU).
+2. OSP primary reproduction for the manuscript's main artifact claims (needs an
+   NVIDIA GPU in practice).
 3. Optional supplementary reproduction for the case study and extended ICFEM
    analyses.
 
@@ -33,19 +35,22 @@ Result-group map:
 | optional extended ICFEM analysis | Component ablation | `experiments/5_component_ablation.*` | No |
 
 The primary OSP reproduction focuses on the CSV summaries in
-`artifact-results/v0.2.0/primary/`. Optional extended ICFEM summaries are kept in
-`artifact-results/v0.2.0/optional/`.
+`artifact-results/v0.3.0/primary/`. Optional extended ICFEM summaries are kept in
+`artifact-results/v0.3.0/optional/`.
 
 Use `experiments/README.md` for exact Linux/macOS and Windows commands.
 
 ## Environment
 
-Start from the root `README.md`.
+Start from the root `README.md`; its Prerequisites section lists the hardware
+and software requirements.
 
 Recommended setup:
 
-1. Use Docker when you want the most controlled environment for review.
-2. Use `uv sync` for local setup when Docker is not convenient.
+1. Use Docker when you want the most controlled environment for review (NVIDIA
+   GPU required).
+2. Use `uv sync` for local setup when Docker is not convenient, or when no
+   NVIDIA GPU is available.
 3. Download the required Hugging Face models before running full experiments.
 4. Build the optional WD-shift native kernel for faster Vendi score evaluation.
 
@@ -63,10 +68,17 @@ as the reference model revisions for archival reproduction notes. If you
 reproduce with newer model snapshots, record the exact revisions with the
 resulting `results/` artifacts.
 
+All generation uses multinomial sampling at temperature 1.0 without top-k,
+top-p, or repetition-penalty adjustments, as in the paper. Generators do not
+inherit these settings from the model's `generation_config.json` (see
+"Sampling defaults" in the root `README.md`), and the generation and runtime
+scripts record the sampling arguments in their JSON output.
+
 ## Quick Checks
 
 These checks are intended to verify that the artifact is installed and wired
 correctly before running the OSP primary reproduction or optional material.
+They run on a CPU.
 
 From the repository root:
 
@@ -82,6 +94,7 @@ and Rust DFA extension work together.
 For a lightweight model-backed generation check:
 
 ```bash
+uv run python examples/05_paper_example.py
 uv run poe gen css-color -n 10 --stdout-only
 ```
 
@@ -102,7 +115,7 @@ Recommended OSP primary reproduction order:
    - `uv run python scripts/collect_results.py --experiment diversity`
    - `uv run python scripts/collect_results.py --experiment runtime`
 5. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
-   with `artifact-results/v0.2.0/primary/`.
+   with `artifact-results/v0.3.0/primary/`.
 
 optional automated impact check:
 
@@ -117,7 +130,7 @@ optional extended ICFEM analyses:
    - `uv run python scripts/collect_results.py --experiment temperature_ablation`
    - `uv run python scripts/collect_results.py --experiment component_ablation`
 4. Compare the optional CSVs under `results/tables/` with
-   `artifact-results/v0.2.0/optional/`.
+   `artifact-results/v0.3.0/optional/`.
 
 The default efficiency-evaluation baseline is the internal regex-only
 masking backend (`--baseline-backend internal`). The optional Outlines backend
@@ -152,7 +165,7 @@ results/
 Tracked reference CSV summaries are kept under:
 
 ```text
-artifact-results/v0.2.0/
+artifact-results/v0.3.0/
   primary/
     diversity.csv
     runtime.csv
@@ -174,8 +187,8 @@ uv run python scripts/collect_results.py --experiment diversity
 ```
 
 The JSON result files include reproduction metadata such as timestamp, git
-commit, Python version, platform, and where applicable the selected
-string-kernel backend.
+commit, Python version, platform, the sampling arguments, and where applicable
+the selected string-kernel backend.
 
 ## Nondeterminism and Tolerance
 
@@ -211,14 +224,15 @@ rather than as exact equality checks.
 
 ## Reviewer Checklist
 
-For a short artifact check:
+For a short artifact check (CPU is sufficient):
 
 1. Build or install the environment from `README.md`.
 2. Run `uv run poe test`, `uv run poe test-rust`, and `uv run poe lint`.
 3. Run the README smoke test.
-4. Run `uv run poe gen css-color -n 10 --stdout-only`.
+4. Run `uv run python examples/05_paper_example.py` or
+   `uv run poe gen css-color -n 10 --stdout-only`.
 
-For OSP primary reproduction:
+For OSP primary reproduction (NVIDIA GPU):
 
 1. Follow the setup in `README.md`.
 2. Run `experiments/1_generation.*`.
@@ -228,7 +242,7 @@ For OSP primary reproduction:
    - `uv run python scripts/collect_results.py --experiment diversity`
    - `uv run python scripts/collect_results.py --experiment runtime`
 6. Compare `results/tables/diversity.csv` and `results/tables/runtime.csv`
-   with `artifact-results/v0.2.0/primary/`.
+   with `artifact-results/v0.3.0/primary/`.
 
 For optional supplementary checks:
 
@@ -238,4 +252,4 @@ For optional supplementary checks:
 3. Collect optional CSV summaries:
    - `uv run python scripts/collect_results.py --experiment temperature_ablation`
    - `uv run python scripts/collect_results.py --experiment component_ablation`
-4. Compare optional CSV summaries with `artifact-results/v0.2.0/optional/`.
+4. Compare optional CSV summaries with `artifact-results/v0.3.0/optional/`.

@@ -42,9 +42,18 @@ user code
 ```
 
 `StatefulSequenceGeneratorAdapter` owns the Hugging Face model, tokenizer, and
-logits processor. Its `__call__` method generates one sample. Its
-`generate_batch` method generates multiple samples for the same prompt and
-updates the global path counter for each completed output.
+logits processor. Its `__call__` method generates one sample and leaves the
+global path counter unchanged; callers add the sample with
+`update_generated_content`. Its `generate_batch` method generates multiple
+samples for the same prompt in one `model.generate` call and afterwards adds
+every completed sample that ends in an accepting DFA state to the global path
+counter (samples cut off by `max_tokens` are skipped).
+
+The adapter passes `do_sample=True` and the sampling arguments in
+`PURE_SAMPLING_DEFAULTS` (temperature 1.0, no top-k/top-p truncation, no
+repetition penalty) to `model.generate`, overridden by any arguments the caller
+gives. This keeps the model's own `generation_config.json` from changing the
+sampling distribution.
 
 During `model.generate`, `DiverseRegexLogitsProcessor.__call__` runs at every
 generation step. It:
@@ -78,19 +87,26 @@ The typed Python stub lives in
 
 Counter responsibilities:
 
-- Path counters record byte-transition usage across completed generated
-  samples.
-- Local state counters record token-path usage within one `model.generate`
-  call.
-- `compute_counts(state)` returns valid token ids plus reward and penalty
-  count signals for the current DFA state.
+- The global path counter `C(p, p')` counts byte-level DFA transitions of
+  completed samples that end in an accepting state, including the final
+  end-of-sequence transition (`commit_valid_token_path`,
+  `commit_valid_string`).
+- The local state counter `C_loc(p)` counts visits to DFA states by the tokens
+  chosen during one `model.generate` call; all rows of a batch share it, and
+  the adapter resets it before each call.
+- `compute_counts(state)` returns valid token ids plus the reward and penalty
+  counts for the current DFA state; `compute_adjustments(state, beta, ...)`
+  turns them into per-token adjustment factors.
 
 `DiverseGuideDFA.fork()` creates a new DFA object that shares the immutable
 index while resetting counters. Pickle support uses bincode serialization.
 
 ## Diversity Mechanism
 
-The diversity logic is implemented in `src/diverse_guide/guide_rust.py`.
+The counts and per-token adjustment factors are computed in Rust
+(`DiverseGuideDFA.compute_adjustments`); `DiverseRegexLogitsProcessor` in
+`src/diverse_guide/guide_rust.py` applies the range scaling and writes the
+result into the Hugging Face score tensor.
 
 At a high level, each step combines three operations:
 
@@ -100,6 +116,24 @@ At a high level, each step combines three operations:
 3. **Local penalty**: tokens overused within the current generation call receive
    a larger penalty.
 
+Formally, in DFA state `q` let `V(q)` be the allowed tokens, and let consuming
+token `w` traverse the states `q = q_0, q_1, ..., q_k`. With
+
+```text
+E(q, w) = min_{0 <= j < k} C(q_j, q_{j+1})
+m(q, w) = max(1, max_{1 <= j <= k} C_loc(q_j))
+```
+
+the logit `z_w` of each allowed token becomes
+
+```text
+z'_w = z_w + gamma * r * log(1 + sum_{w' in V(q)} E(q, w')) / ((1 + E(q, w)) * beta * m(q, w)^2)
+```
+
+where `r` is the range (maximum minus minimum) of the allowed-token logits,
+taken jointly over all rows of a batch. All other logits are set to `-inf`.
+The defaults are `gamma = 0.5` and `beta = 3.0`.
+
 The `gamma` parameter scales the reward signal in `DiverseRegexLogitsProcessor`.
 The `beta` parameter scales the local penalty. The default internal baseline is
 implemented separately by `RegexMaskLogitsProcessor` so runtime comparisons do
@@ -108,9 +142,11 @@ not include diversity-count computation in the baseline path.
 The ablation options in `DiverseGuide(..., ablation_component=...)` disable
 individual parts of this adjustment for experiment scripts:
 
-- `reward`
-- `penalty`
-- `range_scaling`
+- `reward`: the reward factor `log(1 + sum E) / (1 + E)` is replaced by 1
+- `penalty`: the penalty factor `1 / (beta * m^2)` is replaced by 1
+- `range_scaling`: `r` is replaced by 1
+
+Any other value raises `ValueError`.
 
 `src/diverse_guide/guide_python.py` is a pure-Python reference implementation.
 It is useful for debugging and equivalence tests, but the package exports the

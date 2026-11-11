@@ -1,7 +1,8 @@
-# DiverseGuide v0.2.0 Reference Results
+# DiverseGuide v0.3.0 Reference Results
 
-This directory contains author-generated CSV summaries for the DiverseGuide
-v0.2.0 OSP artifact snapshot.
+This directory contains the author-generated CSV summaries shipped with the
+DiverseGuide v0.3.0 OSP artifact. They were produced with the code of the
+`v0.2.0` release.
 
 The ignored `results/` directory is used for local regenerated outputs. The
 tracked files here are reference summaries that reviewers can compare against

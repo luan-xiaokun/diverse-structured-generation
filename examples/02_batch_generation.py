@@ -2,13 +2,17 @@
 Batch generation: produce N samples in a single model.generate() call.
 
 ``generate_batch`` is more efficient than calling ``__call__`` in a loop
-because all sequences are generated in parallel on the GPU.  Path counters
-are updated automatically after each completed sequence within the batch,
-so later sequences in the batch are diversified relative to earlier ones.
+because all sequences are generated in parallel on the GPU.  Within the batch,
+the parallel sequences share the local state counter, which penalises DFA
+states that the other sequences already use heavily.  After the batch, every
+completed sample that matches the regex is added to the global path counter,
+so later calls are diversified relative to it.
 
 Key difference from 01_quickstart.py:
-  - generate_batch  →  parallel GPU execution, counters updated per-sequence
-  - loop + __call__ →  sequential execution (one sequence at a time)
+  - generate_batch  →  parallel GPU execution, global counter updated after
+                       the batch
+  - loop + __call__ →  sequential execution (one sequence at a time), global
+                       counter updated by update_generated_content after each
 
 Run:
     uv run python examples/02_batch_generation.py

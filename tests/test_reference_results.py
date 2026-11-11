@@ -1,10 +1,10 @@
-"""Reference result checks for the v0.2.0 OSP artifact snapshot."""
+"""Reference result checks for the tracked artifact-results/v0.3.0 summaries."""
 
 import csv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE_ROOT = ROOT / "artifact-results" / "v0.2.0"
+REFERENCE_ROOT = ROOT / "artifact-results" / "v0.3.0"
 
 EXPECTED_FILES = {
     REFERENCE_ROOT / "README.md",

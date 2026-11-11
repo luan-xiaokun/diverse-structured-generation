@@ -12,9 +12,10 @@ uv sync --group dev
 source .venv/bin/activate
 ```
 
-The Rust extension declares `rust-version = "1.71.1"` in
-`regex_dfa_guide/Cargo.toml`. The current local verification environment uses
-`rustc 1.94.1` and `cargo 1.94.1`.
+The Rust extension declares `rust-version = "1.85"` in
+`regex_dfa_guide/Cargo.toml`; this is the minimum required by its `bincode`
+dependency, and the crate was checked to build with Rust 1.85. The current local
+verification environment uses the latest stable toolchain.
 
 The root project declares `regex-dfa-guide` as a local path dependency, so
 `uv sync` builds and installs the Rust extension automatically.
@@ -207,7 +208,7 @@ Before a release or OSP artifact snapshot:
 5. Validate `CITATION.cff` with `cffconvert --validate --infile CITATION.cff`.
 6. Confirm `REPRODUCIBILITY.md`, `docs/architecture.md`, and this file describe
    the current command surface.
-7. Create an immutable git tag for the artifact snapshot, such as `v0.2.0`, and
+7. Create an immutable git tag for the artifact snapshot, such as `v0.3.0`, and
    use that tag or a DOI-backed archive link in OSP metadata.
 8. Confirm generated `data/`, `results/`, native build artifacts, virtual
    environments, and caches are not part of the release unless intentionally

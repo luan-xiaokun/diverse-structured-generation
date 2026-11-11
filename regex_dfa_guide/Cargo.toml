@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2021"
 description = "DFA-based guide for diverse regex-constrained LLM generation"
 license = "MIT"
-rust-version = "1.71.1"
+rust-version = "1.85"
 
 [dependencies]
 bincode = "2.0.1"
