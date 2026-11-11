@@ -1,4 +1,5 @@
 from .guide_rust import (
+    PURE_SAMPLING_DEFAULTS,
     DiverseGuide,
     DiverseRegexLogitsProcessor,
     RegexMaskLogitsProcessor,
@@ -10,6 +11,7 @@ from .vocab import build_reduced_vocab, build_token_id_map
 
 __all__ = [
     "DiverseGuide",
+    "PURE_SAMPLING_DEFAULTS",
     "DiverseRegexLogitsProcessor",
     "RegexMaskLogitsProcessor",
     "StatefulSequenceGeneratorAdapter",

@@ -33,6 +33,7 @@ try:
 except ImportError:
     from regex_dfa_guide.regex_dfa_guide_rs import DiverseGuideDFA
 
+from .guide_rust import PURE_SAMPLING_DEFAULTS
 from .vocab import build_token_id_map
 
 
@@ -238,7 +239,7 @@ class StatefulSequenceGeneratorAdapter:
         self.model = model
         self.tokenizer = tokenizer
         self.logits_processor = logits_processor
-        self.generation_defaults = generation_defaults
+        self.generation_defaults = {**PURE_SAMPLING_DEFAULTS, **generation_defaults}
         if "pad_token_id" not in self.generation_defaults:
             pad_token_id = tokenizer.pad_token_id
             if pad_token_id is None:

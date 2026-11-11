@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError
 import pytest
 
 import scripts.eval_runtime as eval_runtime
+from diverse_guide import PURE_SAMPLING_DEFAULTS
 from scripts.eval_runtime import (
     OutlinesRegexGenerator,
     build_runtime_result,
@@ -217,9 +218,7 @@ def _install_runtime_fakes(monkeypatch, generator_factory):
     return generator_factory
 
 
-def test_main_keeps_internal_baseline_generation_kwargs_unchanged(
-    monkeypatch, tmp_path
-):
+def test_main_passes_pure_sampling_defaults_to_internal_baseline(monkeypatch, tmp_path):
     calls = {}
     seed_calls = []
 
@@ -256,9 +255,16 @@ def test_main_keeps_internal_baseline_generation_kwargs_unchanged(
 
     eval_runtime.main()
 
-    assert calls["kwargs"] == {}
+    assert calls["kwargs"] == {
+        "temperature": 1.0,
+        "top_k": 0,
+        "top_p": 1.0,
+        "repetition_penalty": 1.0,
+    }
     assert calls["max_tokens"] == 2
     assert seed_calls == [42]
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    assert saved["parameters"]["sampling"] == calls["kwargs"]
 
 
 def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
@@ -300,7 +306,7 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
     eval_runtime.main()
 
     assert calls["regex"] == eval_runtime.GRAMMAR_REGEX["css-color"]
-    assert calls["kwargs"] == {"temperature": 1.5}
+    assert calls["kwargs"] == {**PURE_SAMPLING_DEFAULTS, "temperature": 1.5}
     assert calls["max_tokens"] == 2
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["setting"] == "diverse"
@@ -405,7 +411,11 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
 
     eval_runtime.main()
 
-    assert calls["kwargs"] == {"do_sample": True, "pad_token_id": 9}
+    assert calls["kwargs"] == {
+        **PURE_SAMPLING_DEFAULTS,
+        "do_sample": True,
+        "pad_token_id": 9,
+    }
     assert calls["max_tokens"] == 2
     assert seed_calls == [42]
     saved = json.loads(output.read_text(encoding="utf-8"))

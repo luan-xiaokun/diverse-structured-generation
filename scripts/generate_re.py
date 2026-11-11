@@ -15,7 +15,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import DiverseGuide, baseline_regex
+from diverse_guide import PURE_SAMPLING_DEFAULTS, DiverseGuide, baseline_regex
 from diverse_guide.evaluation.paths import get_data_dir_path
 
 GRAMMAR_REGEX = {
@@ -49,6 +49,7 @@ class GeneratedData:
     attempted_batches: int | None = None
     accepted_samples: int | None = None
     rejected_samples: int | None = None
+    sampling_parameters: dict[str, float | int] | None = None
 
     def to_dict(self):
         return {
@@ -66,6 +67,7 @@ class GeneratedData:
             "attempted_batches": self.attempted_batches,
             "accepted_samples": self.accepted_samples,
             "rejected_samples": self.rejected_samples,
+            "sampling_parameters": self.sampling_parameters,
         }
 
     @classmethod
@@ -85,6 +87,7 @@ class GeneratedData:
             attempted_batches=data.get("attempted_batches"),
             accepted_samples=data.get("accepted_samples"),
             rejected_samples=data.get("rejected_samples"),
+            sampling_parameters=data.get("sampling_parameters"),
         )
 
 
@@ -126,13 +129,22 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--top-k", type=int, default=None, help="The top-k value for sampling."
+        "--top-k",
+        type=int,
+        default=None,
+        help="The top-k value for sampling (default: 0, no truncation).",
     )
     parser.add_argument(
-        "--top-p", type=float, default=None, help="The top-p value for sampling."
+        "--top-p",
+        type=float,
+        default=None,
+        help="The top-p value for sampling (default: 1.0, no truncation).",
     )
     parser.add_argument(
-        "--temperature", type=float, default=None, help="The temperature for sampling."
+        "--temperature",
+        type=float,
+        default=None,
+        help="The temperature for sampling (default: 1.0).",
     )
     parser.add_argument(
         "--seed",
@@ -214,16 +226,19 @@ def main():
         generation_kwargs["top_p"] = args.top_p
     if args.temperature is not None:
         generation_kwargs["temperature"] = args.temperature
+    # Pass every sampling argument explicitly so that none of them falls back
+    # to the model's generation_config.json, and record what was used.
+    sampling_parameters = {**PURE_SAMPLING_DEFAULTS, **generation_kwargs}
 
     if args.baseline:
-        generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
+        generator = baseline_regex(model, tokenizer, regex, **sampling_parameters)
     else:
         generator = DiverseGuide(
             model,
             tokenizer,
             regex,
             ablation_component=args.ablation_component,
-            **generation_kwargs,
+            **sampling_parameters,
         )
 
     gen_data = GeneratedData(
@@ -241,6 +256,7 @@ def main():
         0,
         0,
         0,
+        sampling_parameters,
     )
     json_path: Path | None = None
     if not args.stdout_only:

@@ -3,6 +3,7 @@ import sys
 from unittest.mock import Mock
 
 import scripts.generate_re as generate_re
+from diverse_guide import PURE_SAMPLING_DEFAULTS
 from scripts.generate_re import GeneratedData, set_generation_seed
 
 
@@ -197,7 +198,11 @@ def test_main_forwards_local_files_only_and_records_generation_metrics(
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert calls["model_kwargs"]["local_files_only"] is True
     assert calls["tokenizer_kwargs"]["local_files_only"] is True
-    assert calls["guide_kwargs"]["ablation_component"] is None
+    assert calls["guide_kwargs"] == {
+        "ablation_component": None,
+        **PURE_SAMPLING_DEFAULTS,
+    }
+    assert saved["sampling_parameters"] == PURE_SAMPLING_DEFAULTS
     assert saved["accepted_samples"] == 2
     assert saved["rejected_samples"] == 1
     assert saved["attempted_batches"] == 2

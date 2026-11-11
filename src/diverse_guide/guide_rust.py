@@ -14,6 +14,21 @@ except ImportError:
 
 from .vocab import build_token_id_map
 
+#: Sampling arguments passed to ``model.generate`` unless the caller overrides
+#: them. They make generation sample from the full next-token distribution
+#: (multinomial sampling at temperature 1.0). Without them, Hugging Face fills
+#: unset arguments from the model's ``generation_config.json``, which may
+#: truncate or reshape the distribution.
+PURE_SAMPLING_DEFAULTS: dict[str, float | int] = {
+    "temperature": 1.0,
+    "top_k": 0,
+    "top_p": 1.0,
+    "repetition_penalty": 1.0,
+}
+
+#: Accepted values of ``DiverseGuide(..., ablation_component=...)``.
+ABLATION_COMPONENTS = (None, "reward", "penalty", "range_scaling")
+
 
 def _device_cache_key(device: torch.device) -> tuple[str, int | None]:
     return (device.type, device.index)
@@ -172,9 +187,22 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
                                     {1 + c^{\\text{path}}_i}
                        \\cdot \\frac{1}{\\beta \\cdot (c^{\\text{local}}_i)^2}
 
-    The path counter (global, cross-sequence) is updated externally via
-    :meth:`StatefulSequenceGeneratorAdapter.update_generated_content`.
-    The local counter (per ``model.generate`` call) is reset by :meth:`reset`.
+       where the sum runs over the allowed tokens ``j``, and for token ``i``:
+
+       * ``c_path_i`` is the smallest global path count among the DFA
+         transitions that token ``i`` traverses;
+       * ``c_local_i`` is ``max(1, m)``, where ``m`` is the largest local count
+         among the DFA states that token ``i`` enters (its source state is
+         excluded);
+       * ``logits_range`` is the difference between the largest and the
+         smallest allowed-token logit, taken jointly over all rows of a batch.
+
+    The global path counter counts the DFA transitions of completed samples
+    that end in an accepting state. ``generate_batch`` updates it
+    automatically; after :meth:`StatefulSequenceGeneratorAdapter.__call__`,
+    call :meth:`StatefulSequenceGeneratorAdapter.update_generated_content`.
+    The local state counter is shared by the rows of one ``model.generate``
+    call and is reset by the adapter before each call.
     """
 
     def __init__(
@@ -407,12 +435,15 @@ class StatefulSequenceGeneratorAdapter:
             A configured :class:`DiverseRegexLogitsProcessor`.
         **generation_defaults:
             Default kwargs forwarded to ``model.generate`` on every call
-            (e.g. ``temperature=0.8``, ``top_p=0.95``).
+            (e.g. ``temperature=0.8``, ``top_p=0.95``). They are applied on
+            top of :data:`PURE_SAMPLING_DEFAULTS`, so sampling arguments that
+            are not given here do not fall back to the model's own
+            ``generation_config``.
         """
         self.model = model
         self.tokenizer = tokenizer
         self.logits_processor = logits_processor
-        self.generation_defaults = generation_defaults
+        self.generation_defaults = {**PURE_SAMPLING_DEFAULTS, **generation_defaults}
         if "pad_token_id" not in self.generation_defaults:
             pad_token_id = getattr(tokenizer, "pad_token_id", None)
             if pad_token_id is None:
@@ -512,6 +543,21 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
     It compiles the regex constraint into a DFA-backed logits processor and
     exposes the same single-sequence and batch generation methods as
     :class:`StatefulSequenceGeneratorAdapter`.
+
+    Parameters
+    ----------
+    model, tokenizer:
+        A Hugging Face causal language model and its tokenizer.
+    regex_str:
+        The regular expression that every output must match.
+    gamma, beta:
+        Reward and penalty scale factors.
+    ablation_component:
+        ``None`` (default) for the full method, or one of ``"reward"``,
+        ``"penalty"``, ``"range_scaling"`` to disable that component.
+    **generation_kwargs:
+        Default arguments for ``model.generate``, applied on top of
+        :data:`PURE_SAMPLING_DEFAULTS`.
     """
 
     def __init__(
@@ -524,6 +570,11 @@ class DiverseGuide(StatefulSequenceGeneratorAdapter):
         ablation_component: str | None = None,
         **generation_kwargs,
     ):
+        if ablation_component not in ABLATION_COMPONENTS:
+            raise ValueError(
+                f"Unknown ablation_component {ablation_component!r}; expected None "
+                'or one of "reward", "penalty", "range_scaling".'
+            )
         no_reward = ablation_component == "reward"
         no_penalty = ablation_component == "penalty"
         no_range_scaling = ablation_component == "range_scaling"
@@ -570,8 +621,8 @@ def diverse_regex(
     beta
         Diversity penalty scale factor.
     ablation_component
-        If not ``None``, one of ``"no_reward"``, ``"no_penalty"``, or
-        ``"no_range_scaling"``, to ablate the corresponding component of the
+        If not ``None``, one of ``"reward"``, ``"penalty"``, or
+        ``"range_scaling"``, to disable the corresponding component of the
         diversity mechanism for analysis.
     **generation_kwargs
         Additional kwargs forwarded to model.generate().

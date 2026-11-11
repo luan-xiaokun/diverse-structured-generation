@@ -425,6 +425,37 @@ class _DeterministicModel:
         return output
 
 
+class _RecordingModel(_DeterministicModel):
+    """Deterministic mock model that records the kwargs of each generate call."""
+
+    def __init__(self):
+        self.calls = []
+
+    def generate(self, input_ids, **kwargs):
+        self.calls.append(kwargs)
+        return super().generate(input_ids, **kwargs)
+
+
+def test_adapter_samples_without_model_generation_config_defaults(mock_tokenizer):
+    """Unset sampling arguments are pinned to pure multinomial sampling, so the
+    model's generation_config is not inherited; constructor and per-call
+    arguments still take precedence."""
+    tok = _BatchTokenizerMock(mock_tokenizer)
+    model = _RecordingModel()
+    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
+    adapter = StatefulSequenceGeneratorAdapter(model, tok, proc, temperature=1.5)
+
+    adapter.generate_batch("prompt", n=2, max_tokens=2)
+    adapter.generate_batch("prompt", n=2, max_tokens=2, top_p=0.9)
+
+    expected = {**gr.PURE_SAMPLING_DEFAULTS, "temperature": 1.5}
+    for key, value in expected.items():
+        assert model.calls[0][key] == value
+    assert model.calls[1]["top_p"] == 0.9
+    assert model.calls[1]["top_k"] == 0
+    assert gr.baseline_regex(model, tok, r"a+").generation_defaults["top_k"] == 0
+
+
 # ---------------------------------------------------------------------------
 # generate_batch tests
 # ---------------------------------------------------------------------------
@@ -779,3 +810,5 @@ def test_rust_adapter_call_update_and_ablation_mapping():
     assert a1.logits_processor.no_reward
     assert a2.logits_processor.no_penalty
     assert a3.logits_processor.no_range_scaling
+    with pytest.raises(ValueError, match="ablation_component"):
+        gr.DiverseGuide(model, tok, "[ab]", ablation_component="no_reward")

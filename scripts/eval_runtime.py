@@ -13,7 +13,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from diverse_guide import DiverseGuide, baseline_regex
+from diverse_guide import PURE_SAMPLING_DEFAULTS, DiverseGuide, baseline_regex
 
 try:
     from generate_re import GRAMMAR_PROMPT, GRAMMAR_REGEX, set_generation_seed
@@ -82,6 +82,7 @@ def build_runtime_result(
     total_token_num: int,
     total_time: float,
     metadata: dict[str, Any] | None = None,
+    sampling_parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tokens_per_second = total_token_num / total_time if total_time > 0 else None
     return {
@@ -96,6 +97,7 @@ def build_runtime_result(
             "temperature": args.temperature,
             "top_k": args.top_k,
             "top_p": args.top_p,
+            "sampling": sampling_parameters,
             "baseline_backend": getattr(args, "baseline_backend", "internal"),
             "seed": args.seed,
         },
@@ -136,13 +138,22 @@ def parse_args():
         help="The maximum number of tokens to generate.",
     )
     parser.add_argument(
-        "--top-k", type=int, default=None, help="The top-k value for sampling."
+        "--top-k",
+        type=int,
+        default=None,
+        help="The top-k value for sampling (default: 0, no truncation).",
     )
     parser.add_argument(
-        "--top-p", type=float, default=None, help="The top-p value for sampling."
+        "--top-p",
+        type=float,
+        default=None,
+        help="The top-p value for sampling (default: 1.0, no truncation).",
     )
     parser.add_argument(
-        "--temperature", type=float, default=None, help="The temperature for sampling."
+        "--temperature",
+        type=float,
+        default=None,
+        help="The temperature for sampling (default: 1.0).",
     )
     parser.add_argument(
         "--seed",
@@ -209,11 +220,14 @@ def main():
         generation_kwargs["top_p"] = args.top_p
     if args.temperature is not None:
         generation_kwargs["temperature"] = args.temperature
+    # Pass every sampling argument explicitly, for every backend, so that none
+    # of them falls back to the model's generation_config.json.
+    sampling_parameters = {**PURE_SAMPLING_DEFAULTS, **generation_kwargs}
 
     if args.baseline:
         if args.baseline_backend == "outlines":
             print("Baseline backend: outlines==1.2.12")
-            outlines_generation_kwargs = {**generation_kwargs, "do_sample": True}
+            outlines_generation_kwargs = {**sampling_parameters, "do_sample": True}
             if getattr(tokenizer, "pad_token_id", None) is None:
                 outlines_generation_kwargs["pad_token_id"] = tokenizer.eos_token_id
             generator = make_outlines_regex_generator(
@@ -221,9 +235,9 @@ def main():
             )
         else:
             print("Baseline backend: internal mask-only")
-            generator = baseline_regex(model, tokenizer, regex, **generation_kwargs)
+            generator = baseline_regex(model, tokenizer, regex, **sampling_parameters)
     else:
-        generator = DiverseGuide(model, tokenizer, regex, **generation_kwargs)
+        generator = DiverseGuide(model, tokenizer, regex, **sampling_parameters)
 
     total_token_num = 0
     total_time = 0.0
@@ -238,7 +252,9 @@ def main():
             total_time += elapsed_time
             pbar.update(token_num)
 
-    result = build_runtime_result(args, total_token_num, total_time)
+    result = build_runtime_result(
+        args, total_token_num, total_time, sampling_parameters=sampling_parameters
+    )
     print(
         f"Generated {result['tokens']['generated']} tokens "
         f"in {result['timing']['seconds']:.2f} seconds."
