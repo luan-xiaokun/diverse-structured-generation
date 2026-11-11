@@ -15,6 +15,10 @@ except ImportError:
 from .vocab import build_token_id_map
 
 
+def _device_cache_key(device: torch.device) -> tuple[str, int | None]:
+    return (device.type, device.index)
+
+
 class DiverseRegexGuide:
     """Guide to generate text diversely in the language of a regular expression.
 
@@ -74,6 +78,11 @@ class RegexMaskLogitsProcessor(LogitsProcessor):
         self._seq_start_idx: int | None = None
         self._guide_states_by_row: list[int] | None = None
         self._processed_lengths_by_row: list[int] | None = None
+        # Allowed tokens per DFA state never change, so their index tensors are
+        # cached per device instead of being rebuilt and copied every step.
+        self._allowed_token_tensor_cache: dict[
+            tuple[int, tuple[str, int | None]], torch.LongTensor
+        ] = {}
 
     def reset(self) -> None:
         """Reset per-call state before a new ``model.generate()`` call."""
@@ -108,6 +117,19 @@ class RegexMaskLogitsProcessor(LogitsProcessor):
         self._processed_lengths_by_row[row] = processed
         return state
 
+    def _allowed_token_tensor(
+        self, state: int, device: torch.device
+    ) -> torch.LongTensor:
+        cache_key = (state, _device_cache_key(device))
+        cached = self._allowed_token_tensor_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        allowed_tokens = self.guide.get_next_instruction(state)
+        tensor = torch.tensor(allowed_tokens, dtype=torch.long, device=device)
+        self._allowed_token_tensor_cache[cache_key] = tensor
+        return tensor
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor
     ) -> torch.FloatTensor:
@@ -120,10 +142,7 @@ class RegexMaskLogitsProcessor(LogitsProcessor):
         for row, seq_ids in enumerate(input_ids):
             gen_ids = seq_ids[self._seq_start_idx :]
             guide_state = self._advance_row(row, gen_ids)
-            allowed_tokens = self.guide.get_next_instruction(guide_state)
-            allowed_tokens = torch.tensor(
-                allowed_tokens, dtype=torch.long, device=scores.device
-            )
+            allowed_tokens = self._allowed_token_tensor(guide_state, scores.device)
             allowed_tokens_batch.append(allowed_tokens)
             batch_indices.append(torch.full_like(allowed_tokens, row))
 
@@ -203,6 +222,11 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         self._seq_start_idx: int | None = None
         self._guide_states_by_row: list[int] | None = None
         self._processed_lengths_by_row: list[int] | None = None
+        # Allowed tokens per DFA state never change, so their index tensors are
+        # cached per device instead of being rebuilt and copied every step.
+        self._allowed_token_tensor_cache: dict[
+            tuple[int, tuple[str, int | None]], torch.LongTensor
+        ] = {}
 
     def reset(self) -> None:
         """Reset per-call state. Must be called before each new ``model.generate()``
@@ -260,13 +284,31 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
 
         return reward / penalty
 
+    def _allowed_token_tensor(
+        self, state: int, allowed_tokens: list[int], device: torch.device
+    ) -> torch.LongTensor:
+        # The Rust index returns a state's allowed tokens in a fixed order that
+        # matches the order of compute_adjustments, so a cached tensor stays
+        # aligned with freshly computed adjustments.
+        cache_key = (state, _device_cache_key(device))
+        allowed_token_tensor = self._allowed_token_tensor_cache.get(cache_key)
+        if allowed_token_tensor is None:
+            allowed_token_tensor = torch.tensor(
+                allowed_tokens, dtype=torch.long, device=device
+            )
+            self._allowed_token_tensor_cache[cache_key] = allowed_token_tensor
+        return allowed_token_tensor
+
     def _compute_row_allowed_tokens_and_adjustments(
-        self, guide_state: int
+        self, guide_state: int, device: torch.device
     ) -> tuple[torch.LongTensor, torch.FloatTensor]:
         if guide_state == -1:
             allowed_tokens = [self.guide.eos_token_id]
             adjustments = self._compute_adjustments_from_counts([0], [1])
-            return torch.tensor(allowed_tokens, dtype=torch.long), adjustments
+            return (
+                self._allowed_token_tensor(guide_state, allowed_tokens, device),
+                adjustments,
+            )
 
         allowed_tokens, adjustments = self.dfa.compute_adjustments(
             guide_state,
@@ -275,7 +317,7 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
             self.no_penalty,
         )
         return (
-            torch.tensor(allowed_tokens, dtype=torch.long),
+            self._allowed_token_tensor(guide_state, allowed_tokens, device),
             torch.tensor(adjustments, dtype=torch.float),
         )
 
@@ -299,13 +341,13 @@ class DiverseRegexLogitsProcessor(LogitsProcessor):
         adjusts = []
         for i, guide_state in enumerate(sequence_states):
             allowed_tokens, adjustments = (
-                self._compute_row_allowed_tokens_and_adjustments(guide_state)
+                self._compute_row_allowed_tokens_and_adjustments(guide_state, device)
             )
             allowed_tokens_batch.append(allowed_tokens)
             batch_indices.append(torch.full_like(allowed_tokens, i))
             adjusts.append(adjustments)
 
-        allowed_tokens_concat = torch.cat(allowed_tokens_batch).to(device)
+        allowed_tokens_concat = torch.cat(allowed_tokens_batch)
         batch_indices_concat = torch.cat(batch_indices).to(device)
         adjusts_concat = torch.cat(adjusts).to(device)
         allowed_scores = scores[batch_indices_concat, allowed_tokens_concat]

@@ -106,6 +106,18 @@ def test_parse_args_accepts_local_files_only(monkeypatch):
     assert args.local_files_only is True
 
 
+def test_parse_args_accepts_no_progress(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["generate_re.py", "css-color", "--no-progress"],
+    )
+
+    args = generate_re.parse_args()
+
+    assert args.no_progress is True
+
+
 def test_main_forwards_local_files_only_and_records_generation_metrics(
     monkeypatch, tmp_path
 ):

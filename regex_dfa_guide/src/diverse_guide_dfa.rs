@@ -22,10 +22,17 @@ pub type Byte = u8;
 struct AllowedTokenInfo {
     token_id: TokenId,
     next_state: StateId,
-    edge_path: Vec<(StateId, StateId)>,
-    inner_states: Vec<StateId>,
     edge_indices: Vec<usize>,
     state_indices: Vec<usize>,
+}
+
+/// Byte trie over the vocabulary, used to share prefix walks while building
+/// token-level transitions. Children are kept as a short vector because most
+/// nodes have very few outgoing bytes.
+#[derive(Debug, Default)]
+struct VocabTrieNode {
+    children: Vec<(Byte, usize)>,
+    token_ids: Vec<TokenId>,
 }
 
 /// Immutable DFA structure built from a regex and vocabulary.
@@ -69,37 +76,11 @@ impl DfaIndex {
             states.insert(*state);
             states.extend(inputs.values().cloned());
         }
-        // iterate each state, construct token level transitions
-        let mut token_transitions: HashMap<StateId, HashMap<TokenId, StateId>> = HashMap::default();
-        let mut token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>> =
-            HashMap::default();
-        for &current_state in &states {
-            'token_loop: for (token_id, token_str) in vocabulary.iter() {
-                if *token_id == eos_token_id {
-                    continue;
-                }
-                let mut next_state = current_state;
-                let mut state_path = vec![current_state];
-                for byte in token_str.as_bytes() {
-                    next_state = match transitions.get(&next_state) {
-                        Some(trans) => match trans.get(&byte) {
-                            Some(state) => *state,
-                            None => continue 'token_loop,
-                        },
-                        None => continue 'token_loop,
-                    };
-                    state_path.push(next_state);
-                }
-                token_transitions
-                    .entry(current_state)
-                    .or_default()
-                    .insert(*token_id, next_state);
-                token_state_paths
-                    .entry(current_state)
-                    .or_default()
-                    .insert(*token_id, state_path);
-            }
-        }
+        // construct token level transitions by walking the vocabulary trie from
+        // every DFA state, so tokens sharing a byte prefix share the walk
+        let vocab_trie = Self::build_vocabulary_trie(&vocabulary, eos_token_id);
+        let (mut token_transitions, mut token_state_paths) =
+            Self::build_token_level_transitions(&states, &transitions, &vocab_trie);
         // add eos token transitions for final states
         for &final_state in &final_states {
             token_transitions
@@ -152,10 +133,13 @@ impl DfaIndex {
         token_transitions.retain(|_, token_map| !token_map.is_empty());
         token_state_paths.retain(|_, path_map| !path_map.is_empty());
 
-        let mut allowed_token_infos =
-            Self::build_allowed_token_infos(&token_transitions, &token_state_paths);
-        let (state_to_idx, edge_to_idx) = Self::build_dense_counter_indices(&allowed_token_infos);
-        Self::attach_dense_counter_indices(&mut allowed_token_infos, &state_to_idx, &edge_to_idx);
+        let (state_to_idx, edge_to_idx) = Self::build_dense_counter_indices(&token_state_paths);
+        let allowed_token_infos = Self::build_allowed_token_infos(
+            &token_transitions,
+            &token_state_paths,
+            &state_to_idx,
+            &edge_to_idx,
+        );
         let allowed_token_ids: HashMap<StateId, Vec<TokenId>> = allowed_token_infos
             .iter()
             .map(|(state, infos)| {
@@ -181,9 +165,123 @@ impl DfaIndex {
         })
     }
 
+    fn build_vocabulary_trie(
+        vocabulary: &HashMap<TokenId, String>,
+        eos_token_id: TokenId,
+    ) -> Vec<VocabTrieNode> {
+        let mut trie = vec![VocabTrieNode::default()];
+        let mut token_ids: Vec<TokenId> = vocabulary
+            .keys()
+            .copied()
+            .filter(|token_id| *token_id != eos_token_id)
+            .collect();
+        token_ids.sort_unstable();
+
+        for token_id in token_ids {
+            let token_str = vocabulary
+                .get(&token_id)
+                .expect("token id collected from vocabulary must exist");
+            let mut node_idx = 0;
+            for &byte in token_str.as_bytes() {
+                node_idx = if let Some(&(_, child_idx)) = trie[node_idx]
+                    .children
+                    .iter()
+                    .find(|(child_byte, _)| *child_byte == byte)
+                {
+                    child_idx
+                } else {
+                    let child_idx = trie.len();
+                    trie.push(VocabTrieNode::default());
+                    trie[node_idx].children.push((byte, child_idx));
+                    child_idx
+                };
+            }
+            trie[node_idx].token_ids.push(token_id);
+        }
+
+        trie
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn build_token_level_transitions(
+        states: &HashSet<StateId>,
+        byte_transitions: &HashMap<StateId, HashMap<Byte, StateId>>,
+        vocab_trie: &[VocabTrieNode],
+    ) -> (
+        HashMap<StateId, HashMap<TokenId, StateId>>,
+        HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
+    ) {
+        let mut token_transitions: HashMap<StateId, HashMap<TokenId, StateId>> = HashMap::default();
+        let mut token_state_paths: HashMap<StateId, HashMap<TokenId, Vec<StateId>>> =
+            HashMap::default();
+
+        for &current_state in states {
+            let mut state_path = vec![current_state];
+            Self::walk_vocabulary_trie_from_state(
+                current_state,
+                0,
+                current_state,
+                byte_transitions,
+                vocab_trie,
+                &mut state_path,
+                &mut token_transitions,
+                &mut token_state_paths,
+            );
+        }
+
+        (token_transitions, token_state_paths)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_vocabulary_trie_from_state(
+        root_state: StateId,
+        node_idx: usize,
+        dfa_state: StateId,
+        byte_transitions: &HashMap<StateId, HashMap<Byte, StateId>>,
+        vocab_trie: &[VocabTrieNode],
+        state_path: &mut Vec<StateId>,
+        token_transitions: &mut HashMap<StateId, HashMap<TokenId, StateId>>,
+        token_state_paths: &mut HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
+    ) {
+        // the root node holds tokens with an empty byte string, which (as in
+        // the original per-token walk) stay in the current state
+        for &token_id in &vocab_trie[node_idx].token_ids {
+            token_transitions
+                .entry(root_state)
+                .or_default()
+                .insert(token_id, dfa_state);
+            token_state_paths
+                .entry(root_state)
+                .or_default()
+                .insert(token_id, state_path.clone());
+        }
+
+        let Some(transitions) = byte_transitions.get(&dfa_state) else {
+            return;
+        };
+        for &(byte, child_idx) in &vocab_trie[node_idx].children {
+            if let Some(&next_state) = transitions.get(&byte) {
+                state_path.push(next_state);
+                Self::walk_vocabulary_trie_from_state(
+                    root_state,
+                    child_idx,
+                    next_state,
+                    byte_transitions,
+                    vocab_trie,
+                    state_path,
+                    token_transitions,
+                    token_state_paths,
+                );
+                state_path.pop();
+            }
+        }
+    }
+
     fn build_allowed_token_infos(
         token_transitions: &HashMap<StateId, HashMap<TokenId, StateId>>,
         token_state_paths: &HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
+        state_to_idx: &HashMap<StateId, usize>,
+        edge_to_idx: &HashMap<(StateId, StateId), usize>,
     ) -> HashMap<StateId, Vec<AllowedTokenInfo>> {
         let mut allowed_token_infos: HashMap<StateId, Vec<AllowedTokenInfo>> = HashMap::default();
         for (state, token_map) in token_transitions {
@@ -193,19 +291,32 @@ impl DfaIndex {
                     .get(state)
                     .and_then(|paths| paths.get(token_id))
                 {
-                    let edge_path = state_path.windows(2).map(|w| (w[0], w[1])).collect();
-                    let inner_states = state_path[1..].to_vec();
+                    let edge_indices = state_path
+                        .windows(2)
+                        .map(|w| {
+                            *edge_to_idx
+                                .get(&(w[0], w[1]))
+                                .expect("metadata edge path must have a dense edge index")
+                        })
+                        .collect();
+                    let state_indices = state_path[1..]
+                        .iter()
+                        .map(|state| {
+                            *state_to_idx
+                                .get(state)
+                                .expect("metadata inner state must have a dense state index")
+                        })
+                        .collect();
                     infos.push(AllowedTokenInfo {
                         token_id: *token_id,
                         next_state: *next_state,
-                        edge_path,
-                        inner_states,
-                        edge_indices: Vec::new(),
-                        state_indices: Vec::new(),
+                        edge_indices,
+                        state_indices,
                     });
                 }
             }
             if !infos.is_empty() {
+                infos.sort_unstable_by_key(|info| info.token_id);
                 allowed_token_infos.insert(*state, infos);
             }
         }
@@ -213,19 +324,19 @@ impl DfaIndex {
     }
 
     fn build_dense_counter_indices(
-        allowed_token_infos: &HashMap<StateId, Vec<AllowedTokenInfo>>,
+        token_state_paths: &HashMap<StateId, HashMap<TokenId, Vec<StateId>>>,
     ) -> (HashMap<StateId, usize>, HashMap<(StateId, StateId), usize>) {
         let mut state_to_idx: HashMap<StateId, usize> = HashMap::default();
         let mut edge_to_idx: HashMap<(StateId, StateId), usize> = HashMap::default();
 
-        for infos in allowed_token_infos.values() {
-            for info in infos {
-                for &state in &info.inner_states {
+        for path_map in token_state_paths.values() {
+            for state_path in path_map.values() {
+                for &state in &state_path[1..] {
                     if !state_to_idx.contains_key(&state) {
                         state_to_idx.insert(state, state_to_idx.len());
                     }
                 }
-                for &edge in &info.edge_path {
+                for edge in state_path.windows(2).map(|w| (w[0], w[1])) {
                     if !edge_to_idx.contains_key(&edge) {
                         edge_to_idx.insert(edge, edge_to_idx.len());
                     }
@@ -234,35 +345,6 @@ impl DfaIndex {
         }
 
         (state_to_idx, edge_to_idx)
-    }
-
-    fn attach_dense_counter_indices(
-        allowed_token_infos: &mut HashMap<StateId, Vec<AllowedTokenInfo>>,
-        state_to_idx: &HashMap<StateId, usize>,
-        edge_to_idx: &HashMap<(StateId, StateId), usize>,
-    ) {
-        for infos in allowed_token_infos.values_mut() {
-            for info in infos {
-                info.edge_indices = info
-                    .edge_path
-                    .iter()
-                    .map(|edge| {
-                        *edge_to_idx
-                            .get(edge)
-                            .expect("metadata edge path must have a dense edge index")
-                    })
-                    .collect();
-                info.state_indices = info
-                    .inner_states
-                    .iter()
-                    .map(|state| {
-                        *state_to_idx
-                            .get(state)
-                            .expect("metadata inner state must have a dense state index")
-                    })
-                    .collect();
-            }
-        }
     }
 
     fn build_byte_transitions(
@@ -278,7 +360,7 @@ impl DfaIndex {
                 final_states.insert(current_state.as_u32());
             }
             let classes = dfa.byte_classes();
-            for representative in classes.representatives(0..255) {
+            for representative in classes.representatives(0..=255) {
                 let input = representative.as_u8().unwrap();
                 let next_state: AutomataStateId = dfa.next_state(current_state, input);
                 if !dfa.is_dead_state(next_state)
@@ -750,9 +832,13 @@ impl std::fmt::Display for DiverseGuideDFA {
 #[cfg(test)]
 mod tests {
     use bincode::config;
+    use regex_automata::dfa::dense::DFA;
+    use regex_automata::dfa::Automaton;
+    use regex_automata::util::syntax;
+    use regex_automata::Anchored;
     use rustc_hash::FxHashMap as Map;
 
-    use super::{DiverseGuideDFA, Error, TokenId};
+    use super::{DfaIndex, DiverseGuideDFA, Error, TokenId};
 
     fn toy_vocab(eos: TokenId) -> Map<TokenId, String> {
         let mut vocab = Map::default();
@@ -1132,10 +1218,8 @@ mod tests {
                 .expect("metadata token must have state path");
             let expected_edges: Vec<(u32, u32)> =
                 state_path.windows(2).map(|w| (w[0], w[1])).collect();
-            assert_eq!(info.edge_path, expected_edges);
-            assert_eq!(info.inner_states, state_path[1..].to_vec());
-            assert_eq!(info.edge_indices.len(), info.edge_path.len());
-            assert_eq!(info.state_indices.len(), info.inner_states.len());
+            assert_eq!(info.edge_indices.len(), expected_edges.len());
+            assert_eq!(info.state_indices.len(), state_path[1..].len());
         }
     }
 
@@ -1143,12 +1227,22 @@ mod tests {
     fn dense_metadata_indices_match_state_id_paths() {
         let dfa = toy_dfa();
 
-        for infos in dfa.index.allowed_token_infos.values() {
+        for (state, infos) in &dfa.index.allowed_token_infos {
             for info in infos {
-                for (edge, edge_idx) in info.edge_path.iter().zip(&info.edge_indices) {
-                    assert_eq!(dfa.index.edge_to_idx.get(edge), Some(edge_idx));
+                let state_path = dfa
+                    .index
+                    .token_state_paths
+                    .get(state)
+                    .and_then(|paths| paths.get(&info.token_id))
+                    .expect("metadata token must have state path");
+                for (edge, edge_idx) in state_path
+                    .windows(2)
+                    .map(|w| (w[0], w[1]))
+                    .zip(&info.edge_indices)
+                {
+                    assert_eq!(dfa.index.edge_to_idx.get(&edge), Some(edge_idx));
                 }
-                for (state, state_idx) in info.inner_states.iter().zip(&info.state_indices) {
+                for (state, state_idx) in state_path[1..].iter().zip(&info.state_indices) {
                     assert_eq!(dfa.index.state_to_idx.get(state), Some(state_idx));
                 }
             }
@@ -1161,12 +1255,12 @@ mod tests {
         let mut expected_states = Map::default();
         let mut expected_edges = Map::default();
 
-        for infos in dfa.index.allowed_token_infos.values() {
-            for info in infos {
-                for &state in &info.inner_states {
+        for path_map in dfa.index.token_state_paths.values() {
+            for state_path in path_map.values() {
+                for &state in &state_path[1..] {
                     expected_states.insert(state, ());
                 }
-                for &edge in &info.edge_path {
+                for edge in state_path.windows(2).map(|w| (w[0], w[1])) {
                     expected_edges.insert(edge, ());
                 }
             }
@@ -1193,6 +1287,72 @@ mod tests {
     }
 
     #[test]
+    fn allowed_token_order_is_sorted_by_token_id() {
+        let mut vocab = Map::default();
+        vocab.insert(99, "<eos>".to_string());
+        vocab.insert(20, "b".to_string());
+        vocab.insert(10, "a".to_string());
+        vocab.insert(30, "ab".to_string());
+        let dfa = DiverseGuideDFA::new("(?:[ab]|ab)$", 99, vocab).expect("dfa must build");
+        let initial = dfa.get_initial_state();
+
+        let allowed = dfa
+            .get_allowed_token_ids(initial)
+            .expect("allowed tokens from initial");
+        assert_eq!(allowed, vec![10, 20, 30]);
+        assert_eq!(allowed, token_ids_from_counts(&dfa, initial));
+
+        let adjustment_tokens = dfa
+            .compute_adjustments(initial, 3.0, false, false)
+            .expect("compute_adjustments should succeed")
+            .token_ids;
+        assert_eq!(adjustment_tokens, allowed);
+    }
+
+    #[test]
+    fn token_transition_builder_handles_shared_prefixes_and_duplicate_strings() {
+        let mut vocab = Map::default();
+        vocab.insert(99, "<eos>".to_string());
+        vocab.insert(10, "a".to_string());
+        vocab.insert(20, "ab".to_string());
+        vocab.insert(30, "abc".to_string());
+        vocab.insert(40, "ab".to_string());
+        vocab.insert(50, "abc".to_string());
+        let dfa = DiverseGuideDFA::new("(?:abc)$", 99, vocab).expect("dfa must build");
+        let initial = dfa.get_initial_state();
+
+        let allowed = dfa
+            .get_allowed_token_ids(initial)
+            .expect("allowed tokens from initial");
+        assert_eq!(allowed, vec![30, 50]);
+        assert_eq!(
+            dfa.get_byte_state_sequence(initial, 30)
+                .expect("abc token path should exist")
+                .len(),
+            4
+        );
+    }
+
+    #[test]
+    fn byte_transition_builder_includes_255() {
+        let dfa = DFA::builder()
+            .configure(DFA::config().minimize(true))
+            .syntax(syntax::Config::new().unicode(false).utf8(false))
+            .build(r"(?-u:\xFF)")
+            .expect("byte-oriented DFA must build");
+        let start_state = dfa
+            .universal_start_state(Anchored::Yes)
+            .expect("DFA must have start state");
+        let (_, transitions) =
+            DfaIndex::build_byte_transitions(&dfa, start_state).expect("transitions must build");
+
+        assert!(transitions
+            .get(&start_state.as_u32())
+            .expect("start state must have transitions")
+            .contains_key(&255));
+    }
+
+    #[test]
     fn eos_metadata_is_final_state_self_edge() {
         let dfa = toy_dfa();
         let eos = 999;
@@ -1210,8 +1370,8 @@ mod tests {
             .expect("EOS metadata must exist at final state");
 
         assert_eq!(eos_info.next_state, final_state);
-        assert_eq!(eos_info.edge_path, vec![(final_state, final_state)]);
-        assert_eq!(eos_info.inner_states, vec![final_state]);
+        assert_eq!(eos_info.edge_indices.len(), 1);
+        assert_eq!(eos_info.state_indices.len(), 1);
         assert_eq!(
             dfa.index.edge_to_idx.get(&(final_state, final_state)),
             eos_info.edge_indices.first()

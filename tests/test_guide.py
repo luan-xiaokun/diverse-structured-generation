@@ -124,6 +124,27 @@ def test_masking_disallows_non_regex_tokens(mock_tokenizer):
         assert scores[0, tok].item() == float("-inf"), f"token {tok} should be -inf"
 
 
+def test_allowed_token_tensor_cache_reuses_state_tensors(mock_tokenizer):
+    """Repeated calls at the same state reuse one cached tensor per processor."""
+    diverse = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
+    mask_only = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
+    scores = torch.linspace(-1.0, 1.0, 100).unsqueeze(0)
+
+    first = diverse(_make_input_ids(), scores.clone())
+    second = diverse(_make_input_ids(), scores.clone())
+    fresh = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)(
+        _make_input_ids(), scores.clone()
+    )
+    assert len(diverse._allowed_token_tensor_cache) == 1
+    assert torch.equal(first, second)
+    assert torch.equal(first, fresh)
+
+    mask_first = mask_only(_make_input_ids(), scores.clone())
+    mask_second = mask_only(_make_input_ids(), scores.clone())
+    assert len(mask_only._allowed_token_tensor_cache) == 1
+    assert torch.equal(mask_first, mask_second)
+
+
 def test_masking_eos_at_final_state(mock_tokenizer):
     """EOS (99) must be allowed when the DFA is in a final state."""
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
