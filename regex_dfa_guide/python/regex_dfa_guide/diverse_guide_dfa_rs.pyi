@@ -65,6 +65,12 @@ class DiverseGuideDFA:
         """Computes the counts for the given state."""
         ...
 
+    def compute_adjustments(
+        self, state: int, beta: float, no_reward: bool, no_penalty: bool
+    ) -> tuple[list[int], list[float]]:
+        """Computes diversity adjustment values for the given state."""
+        ...
+
     def __reduce__(self) -> tuple:
         """Pickle support."""
         ...

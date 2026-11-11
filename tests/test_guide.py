@@ -184,6 +184,21 @@ def test_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
     assert not out[0, 99].isinf()  # EOS remains valid at terminal state
 
 
+def test_terminal_sentinel_keeps_only_eos(mock_tokenizer):
+    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
+    proc._seq_start_idx = 0
+    proc._guide_states_by_row = [-1]
+    proc._processed_lengths_by_row = [1]
+
+    input_ids = torch.tensor([[10, 77]], dtype=torch.long)
+    scores = torch.linspace(-1.0, 1.0, 100, dtype=torch.float).unsqueeze(0)
+
+    out = proc(input_ids, scores.clone())
+
+    assert not out[0, 99].isinf()
+    assert out[0, 10].item() == float("-inf")
+
+
 # ---------------------------------------------------------------------------
 # DiverseRegexLogitsProcessor — gamma=0 produces zero adjustment
 # ---------------------------------------------------------------------------
