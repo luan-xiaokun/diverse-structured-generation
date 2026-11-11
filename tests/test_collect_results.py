@@ -109,30 +109,19 @@ def test_collect_all_writes_csv_tables(tmp_path):
     assert runtime_rows[0]["seed"] == "42"
 
 
-def test_runtime_row_preserves_outlines_backend():
-    row = runtime_row(
-        _runtime_result(
-            "baseline",
-            "email",
-            baseline_backend="outlines",
-        )
-    )
-
+def test_runtime_row_baseline_backend():
+    row = runtime_row(_runtime_result("baseline", "email", baseline_backend="outlines"))
     assert row["baseline_backend"] == "outlines"
     assert row["seed"] == 42
 
-
-def test_runtime_row_defaults_missing_baseline_backend_to_internal():
+    # Results written before the backend was recorded came from the internal one.
     data = _runtime_result("baseline", "email")
     del data["parameters"]["baseline_backend"]
-
-    row = runtime_row(data)
-
-    assert row["baseline_backend"] == "internal"
+    assert runtime_row(data)["baseline_backend"] == "internal"
 
 
-def test_collect_all_reports_all_missing_or_empty_inputs_without_writing_tables(
-    tmp_path,
+def test_missing_inputs_are_reported_without_writing_tables(
+    tmp_path, monkeypatch, capsys
 ):
     results_dir = tmp_path / "results"
     (results_dir / "temperature_ablation").mkdir(parents=True)
@@ -151,22 +140,16 @@ def test_collect_all_reports_all_missing_or_empty_inputs_without_writing_tables(
     assert f"- {results_dir / 'runtime'} (missing directory)" in message
     assert not (results_dir / "tables").exists()
 
-
-def test_main_prints_clean_preflight_error_without_traceback(
-    tmp_path, monkeypatch, capsys
-):
-    results_dir = tmp_path / "results"
-    (results_dir / "diversity").mkdir(parents=True)
+    # The CLI prints the same preflight error without a traceback.
+    empty_dir = tmp_path / "empty_results"
+    (empty_dir / "diversity").mkdir(parents=True)
     monkeypatch.setattr(
-        sys,
-        "argv",
-        ["collect_results.py", "--results-dir", str(results_dir)],
+        sys, "argv", ["collect_results.py", "--results-dir", str(empty_dir)]
     )
-
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(SystemExit) as exit_info:
         main()
 
-    assert exc_info.value.code == 1
+    assert exit_info.value.code == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "Missing result inputs:" in captured.err
@@ -175,31 +158,28 @@ def test_main_prints_clean_preflight_error_without_traceback(
     assert "runtime" in captured.err
     assert "(missing directory)" in captured.err
     assert "Traceback" not in captured.err
-    assert not (results_dir / "tables").exists()
+    assert not (empty_dir / "tables").exists()
 
 
-def test_collect_single_experiment_writes_only_requested_table(tmp_path):
+def test_single_experiment_collection_writes_only_requested_table(
+    tmp_path, monkeypatch, capsys
+):
     results_dir = tmp_path / "results"
     _write_json(
         results_dir / "diversity" / "diverse" / "css-color.json",
         _metrics_result("diversity", "diverse", "css-color"),
     )
-
-    output_path = collect_experiment(results_dir, "diversity")
-
-    assert output_path == results_dir / "tables" / "diversity.csv"
-    assert output_path.exists()
-    assert not (results_dir / "tables" / "runtime.csv").exists()
-
-
-def test_main_collects_single_experiment_without_requiring_all_groups(
-    tmp_path, monkeypatch, capsys
-):
-    results_dir = tmp_path / "results"
     _write_json(
         results_dir / "runtime" / "baseline" / "css-color.json",
         _runtime_result("baseline", "css-color"),
     )
+
+    output_path = collect_experiment(results_dir, "diversity")
+    assert output_path == results_dir / "tables" / "diversity.csv"
+    assert output_path.exists()
+    assert not (results_dir / "tables" / "runtime.csv").exists()
+
+    # The CLI collects one group without requiring the others to exist.
     monkeypatch.setattr(
         sys,
         "argv",
@@ -211,7 +191,6 @@ def test_main_collects_single_experiment_without_requiring_all_groups(
             "runtime",
         ],
     )
-
     main()
 
     captured = capsys.readouterr()

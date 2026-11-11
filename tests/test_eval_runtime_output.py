@@ -34,101 +34,67 @@ def _args(**overrides):
     return Namespace(**values)
 
 
-def test_build_runtime_result_includes_timing_and_context():
+def test_build_and_write_runtime_result(tmp_path):
+    metadata = {"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None}
     result = build_runtime_result(
-        args=_args(temperature=1.5),
+        args=_args(temperature=1.5, baseline_backend="outlines", seed=42),
         total_token_num=2031,
         total_time=123.45,
-        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
+        metadata=metadata,
     )
-
     assert result["schema_version"] == 1
     assert result["experiment"] == "runtime"
     assert result["setting"] == "baseline"
     assert result["grammar"] == "css-color"
     assert result["parameters"]["temperature"] == 1.5
-    assert result["parameters"]["baseline_backend"] == "internal"
-    assert result["parameters"]["seed"] is None
+    assert result["parameters"]["baseline_backend"] == "outlines"
+    assert result["parameters"]["seed"] == 42
     assert result["tokens"] == {"generated": 2031, "target": 2000}
     assert result["timing"]["seconds"] == 123.45
     assert result["timing"]["tokens_per_second"] == 2031 / 123.45
 
-
-def test_build_runtime_result_records_outlines_baseline_backend():
-    result = build_runtime_result(
-        args=_args(baseline_backend="outlines"),
-        total_token_num=100,
-        total_time=10.0,
-        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
+    zero = build_runtime_result(
+        args=_args(baseline=False), total_token_num=0, total_time=0.0, metadata=metadata
     )
+    assert zero["setting"] == "diverse"
+    assert zero["parameters"]["baseline_backend"] == "internal"
+    assert zero["parameters"]["seed"] is None
+    assert zero["timing"]["tokens_per_second"] is None
 
-    assert result["parameters"]["baseline_backend"] == "outlines"
-
-
-def test_build_runtime_result_records_seed():
-    result = build_runtime_result(
-        args=_args(seed=42),
-        total_token_num=100,
-        total_time=10.0,
-        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
-    )
-
-    assert result["parameters"]["seed"] == 42
+    output_path = tmp_path / "results" / "runtime" / "css-color.json"
+    write_runtime_result(output_path, result)
+    assert json.loads(output_path.read_text())["tokens"]["generated"] == 2031
 
 
-def test_parse_args_requires_baseline_for_outlines_backend(monkeypatch):
+def test_parse_args_local_files_only_and_outlines_requires_baseline(monkeypatch):
     monkeypatch.setattr(
-        sys,
-        "argv",
-        ["eval_runtime.py", "css-color", "--baseline-backend", "outlines"],
+        sys, "argv", ["eval_runtime.py", "css-color", "--local-files-only"]
     )
+    assert parse_args().local_files_only is True
 
+    monkeypatch.setattr(
+        sys, "argv", ["eval_runtime.py", "css-color", "--baseline-backend", "outlines"]
+    )
     with pytest.raises(SystemExit):
         parse_args()
 
 
-def test_parse_args_accepts_local_files_only(monkeypatch):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["eval_runtime.py", "css-color", "--local-files-only"],
-    )
-
-    args = parse_args()
-
-    assert args.local_files_only is True
-
-
-def test_require_outlines_version_accepts_expected_version(monkeypatch):
+def test_require_outlines_version(monkeypatch):
     monkeypatch.setattr(eval_runtime, "package_version", lambda name: "1.2.12")
-
     eval_runtime.require_outlines_version(expected="1.2.12", group="outlines")
 
-
-def test_require_outlines_version_rejects_wrong_version(monkeypatch):
-    monkeypatch.setattr(eval_runtime, "package_version", lambda name: "0.2.3")
-
-    with pytest.raises(RuntimeError) as exc_info:
-        eval_runtime.require_outlines_version(expected="1.2.12", group="outlines")
-
-    assert "Outlines 1.2.12" in str(exc_info.value)
-    assert "uv sync --group outlines" in str(exc_info.value)
-
-
-def test_require_outlines_version_reports_missing_package(monkeypatch):
     def raise_missing(name):
         raise PackageNotFoundError(name)
 
-    monkeypatch.setattr(eval_runtime, "package_version", raise_missing)
+    for fake_version in (lambda name: "0.2.3", raise_missing):
+        monkeypatch.setattr(eval_runtime, "package_version", fake_version)
+        with pytest.raises(RuntimeError) as exc_info:
+            eval_runtime.require_outlines_version(expected="1.2.12", group="outlines")
+        assert "Outlines 1.2.12" in str(exc_info.value)
+        assert "uv sync --group outlines" in str(exc_info.value)
 
-    with pytest.raises(RuntimeError) as exc_info:
-        eval_runtime.require_outlines_version(expected="1.2.12", group="outlines")
 
-    assert "Outlines 1.2.12" in str(exc_info.value)
-    assert "uv sync --group outlines" in str(exc_info.value)
-
-
-def test_outlines_generator_reuses_prebuilt_generator():
+def test_outlines_regex_generator_wrappers(monkeypatch):
     calls = {}
 
     class FakeGenerator:
@@ -138,16 +104,13 @@ def test_outlines_generator_reuses_prebuilt_generator():
             return "ab"
 
     generator = OutlinesRegexGenerator(FakeGenerator(), do_sample=True)
-
     assert generator("prompt", max_tokens=5) == "ab"
     assert calls == {
         "prompt": "prompt",
         "kwargs": {"do_sample": True, "max_new_tokens": 5},
     }
 
-
-def test_make_outlines_regex_generator_wraps_transformers_model(monkeypatch):
-    calls = {}
+    calls.clear()
 
     class FakeOutlines:
         @staticmethod
@@ -174,10 +137,10 @@ def test_make_outlines_regex_generator_wraps_transformers_model(monkeypatch):
         lambda *, expected, group: None,
     )
 
-    generator = make_outlines_regex_generator("model", "tokenizer", "[ab]+")
+    wrapped = make_outlines_regex_generator("model", "tokenizer", "[ab]+")
 
-    assert isinstance(generator, OutlinesRegexGenerator)
-    assert generator.generator == "generator"
+    assert isinstance(wrapped, OutlinesRegexGenerator)
+    assert wrapped.generator == "generator"
     assert calls == {
         "model": "model",
         "tokenizer": "tokenizer",
@@ -203,19 +166,24 @@ class _FakeTokenizer:
         return list(text)
 
 
-def _install_runtime_fakes(monkeypatch, generator_factory):
+def _install_runtime_fakes(monkeypatch, calls=None):
+    calls = {} if calls is None else calls
+
+    def fake_model_from_pretrained(*args, **kwargs):
+        calls["model_kwargs"] = kwargs
+        return _FakeModel()
+
+    def fake_tokenizer_from_pretrained(*args, **kwargs):
+        calls["tokenizer_kwargs"] = kwargs
+        return _FakeTokenizer()
+
     monkeypatch.setattr(eval_runtime.torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr(
-        eval_runtime.AutoModelForCausalLM,
-        "from_pretrained",
-        lambda *args, **kwargs: _FakeModel(),
+        eval_runtime.AutoModelForCausalLM, "from_pretrained", fake_model_from_pretrained
     )
     monkeypatch.setattr(
-        eval_runtime.AutoTokenizer,
-        "from_pretrained",
-        lambda *args, **kwargs: _FakeTokenizer(),
+        eval_runtime.AutoTokenizer, "from_pretrained", fake_tokenizer_from_pretrained
     )
-    return generator_factory
 
 
 def test_main_passes_pure_sampling_defaults_to_internal_baseline(monkeypatch, tmp_path):
@@ -231,7 +199,7 @@ def test_main_passes_pure_sampling_defaults_to_internal_baseline(monkeypatch, tm
 
         return generate
 
-    _install_runtime_fakes(monkeypatch, fake_baseline_regex)
+    _install_runtime_fakes(monkeypatch)
     monkeypatch.setattr(eval_runtime, "baseline_regex", fake_baseline_regex)
     monkeypatch.setattr(eval_runtime, "set_generation_seed", seed_calls.append)
     output = tmp_path / "runtime.json"
@@ -267,7 +235,7 @@ def test_main_passes_pure_sampling_defaults_to_internal_baseline(monkeypatch, tm
     assert saved["parameters"]["sampling"] == calls["kwargs"]
 
 
-def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
+def test_main_uses_diverseguide_and_forwards_local_files_only(monkeypatch, tmp_path):
     calls = {}
 
     def fake_diverse_guide(model, tokenizer, regex, **kwargs):
@@ -283,7 +251,7 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
 
         return generate
 
-    _install_runtime_fakes(monkeypatch, fake_diverse_guide)
+    _install_runtime_fakes(monkeypatch, calls)
     monkeypatch.setattr(eval_runtime, "DiverseGuide", fake_diverse_guide)
     output = tmp_path / "runtime.json"
     monkeypatch.setattr(
@@ -298,6 +266,7 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
             "2",
             "--temperature",
             "1.5",
+            "--local-files-only",
             "--output",
             str(output),
         ],
@@ -311,59 +280,6 @@ def test_main_uses_diverseguide_for_diverse_generation(monkeypatch, tmp_path):
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["setting"] == "diverse"
     assert saved["parameters"]["baseline_backend"] == "internal"
-
-
-def test_main_forwards_local_files_only_to_model_and_tokenizer(monkeypatch, tmp_path):
-    calls = {}
-
-    class FakeModel(_FakeModel):
-        pass
-
-    def fake_model_from_pretrained(*args, **kwargs):
-        calls["model_kwargs"] = kwargs
-        return FakeModel()
-
-    def fake_tokenizer_from_pretrained(*args, **kwargs):
-        calls["tokenizer_kwargs"] = kwargs
-        return _FakeTokenizer()
-
-    def fake_diverse_guide(model, tokenizer, regex, **kwargs):
-        def generate(prompt, max_tokens=None):
-            return "abcde"
-
-        return generate
-
-    monkeypatch.setattr(eval_runtime.torch.cuda, "is_available", lambda: False)
-    monkeypatch.setattr(
-        eval_runtime.AutoModelForCausalLM,
-        "from_pretrained",
-        fake_model_from_pretrained,
-    )
-    monkeypatch.setattr(
-        eval_runtime.AutoTokenizer,
-        "from_pretrained",
-        fake_tokenizer_from_pretrained,
-    )
-    monkeypatch.setattr(eval_runtime, "DiverseGuide", fake_diverse_guide)
-    output = tmp_path / "runtime.json"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "eval_runtime.py",
-            "css-color",
-            "-n",
-            "5",
-            "--max-tokens",
-            "2",
-            "--local-files-only",
-            "--output",
-            str(output),
-        ],
-    )
-
-    eval_runtime.main()
-
     assert calls["model_kwargs"]["local_files_only"] is True
     assert calls["tokenizer_kwargs"]["local_files_only"] is True
 
@@ -381,7 +297,7 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
 
         return generate
 
-    _install_runtime_fakes(monkeypatch, fake_outlines_generator)
+    _install_runtime_fakes(monkeypatch)
     monkeypatch.setattr(eval_runtime, "set_generation_seed", seed_calls.append)
     monkeypatch.setattr(
         eval_runtime,
@@ -421,31 +337,3 @@ def test_main_passes_sampling_defaults_to_outlines_baseline(monkeypatch, tmp_pat
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["parameters"]["baseline_backend"] == "outlines"
     assert saved["parameters"]["seed"] == 42
-
-
-def test_build_runtime_result_handles_zero_time():
-    result = build_runtime_result(
-        args=_args(baseline=False),
-        total_token_num=0,
-        total_time=0.0,
-        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
-    )
-
-    assert result["setting"] == "diverse"
-    assert result["timing"]["tokens_per_second"] is None
-
-
-def test_write_runtime_result_creates_json(tmp_path):
-    output_path = tmp_path / "results" / "runtime" / "css-color.json"
-    result = build_runtime_result(
-        args=_args(),
-        total_token_num=2000,
-        total_time=100.0,
-        metadata={"timestamp_utc": "2026-04-27T00:00:00Z", "git_commit": None},
-    )
-
-    write_runtime_result(output_path, result)
-
-    with output_path.open() as f:
-        saved = json.load(f)
-    assert saved["timing"]["tokens_per_second"] == 20.0

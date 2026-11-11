@@ -917,6 +917,8 @@ mod tests {
 
     use super::{DfaIndex, DiverseGuideDFA, Error, TokenId};
 
+    const EOS: TokenId = 999;
+
     fn toy_vocab(eos: TokenId) -> Map<TokenId, String> {
         let mut vocab = Map::default();
         vocab.insert(eos, "<eos>".to_string());
@@ -928,8 +930,27 @@ mod tests {
     }
 
     fn toy_dfa() -> DiverseGuideDFA {
-        let eos = 999;
-        DiverseGuideDFA::new("ab", eos, toy_vocab(eos)).expect("toy DFA should build")
+        DiverseGuideDFA::new("ab", EOS, toy_vocab(EOS)).expect("toy DFA should build")
+    }
+
+    fn toy_final_state(dfa: &DiverseGuideDFA) -> u32 {
+        *dfa.get_state_sequence("ab")
+            .expect("state sequence must be valid")
+            .last()
+            .expect("non-empty sequence")
+    }
+
+    /// Toy DFA with one full path count on "ab" and two local visits after token "ab".
+    fn toy_dfa_with_counters() -> DiverseGuideDFA {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        dfa.update_path_counter("ab")
+            .expect("path counter update should succeed");
+        dfa.update_local_state_counter(initial, 3)
+            .expect("local counter update should succeed");
+        dfa.update_local_state_counter(initial, 3)
+            .expect("second local counter update should succeed");
+        dfa
     }
 
     fn counts_by_token(dfa: &DiverseGuideDFA, state: u32) -> Map<TokenId, (u32, u32)> {
@@ -946,10 +967,17 @@ mod tests {
         out
     }
 
-    fn token_ids_from_counts(dfa: &DiverseGuideDFA, state: u32) -> Vec<TokenId> {
-        dfa.compute_counts(state)
-            .expect("compute_counts should succeed")
-            .token_ids
+    fn reward_count(dfa: &DiverseGuideDFA, state: u32, token_id: TokenId) -> u32 {
+        counts_by_token(dfa, state)
+            .get(&token_id)
+            .expect("token must be allowed from state")
+            .0
+    }
+
+    fn all_reward_counts_zero(dfa: &DiverseGuideDFA, state: u32) -> bool {
+        counts_by_token(dfa, state)
+            .values()
+            .all(|(reward, _)| *reward == 0)
     }
 
     fn assert_close(left: f32, right: f32) {
@@ -978,12 +1006,6 @@ mod tests {
             beta * (penalty_count as f32).powi(2)
         };
         reward / penalty
-    }
-
-    #[test]
-    fn new_rejects_invalid_regex() {
-        let err = DiverseGuideDFA::new("[", 0, Map::default()).expect_err("must fail");
-        assert!(matches!(err, Error::IndexDfaError(_)));
     }
 
     #[test]
@@ -1016,214 +1038,13 @@ mod tests {
             .get_next_byte_state(next_after_a, b'b')
             .expect("b transition must exist");
         assert_eq!(next_after_b, final_state);
-    }
 
-    #[test]
-    fn invalid_state_and_invalid_token_paths_return_expected_errors() {
-        let dfa = toy_dfa();
-        let invalid_state_err = dfa
-            .get_allowed_token_ids(u32::MAX)
-            .expect_err("invalid state must fail");
-        assert!(matches!(invalid_state_err, Error::InvalidState(_)));
-
-        let initial = dfa.get_initial_state();
-        let no_token_err = dfa
-            .get_next_token_state(initial, 4)
-            .expect_err("token id 4 ('x') should not be valid from initial");
-        assert!(matches!(no_token_err, Error::NoTokenTransitionFound(_, _)));
-    }
-
-    #[test]
-    fn eos_transition_only_available_at_final_state() {
-        let dfa = toy_dfa();
-        let eos = 999;
-        let initial = dfa.get_initial_state();
-        let final_state = *dfa
-            .get_state_sequence("ab")
-            .expect("state sequence must be valid")
-            .last()
-            .expect("non-empty sequence");
-
-        let initial_tokens = dfa
-            .get_allowed_token_ids(initial)
-            .expect("allowed tokens from initial");
-        assert!(!initial_tokens.contains(&eos));
-
-        let final_tokens = dfa
-            .get_allowed_token_ids(final_state)
-            .expect("allowed tokens from final");
-        assert!(final_tokens.contains(&eos));
-    }
-
-    #[test]
-    fn counters_affect_compute_counts_and_can_be_reset() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-
-        let before = counts_by_token(&dfa, initial);
-        // Default: no path history -> reward 0, no local history -> penalty 1.
-        assert_eq!(before.get(&1), Some(&(0, 1)));
-        assert_eq!(before.get(&3), Some(&(0, 1)));
-
-        dfa.update_path_counter("ab")
-            .expect("path counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("local counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("second local counter update should succeed");
-
-        let after = counts_by_token(&dfa, initial);
-        assert_eq!(after.get(&1), Some(&(1, 2)));
-        assert_eq!(after.get(&3), Some(&(1, 2)));
-
-        dfa.reset_path_counter();
-        dfa.reset_local_state_counter();
-        let reset = counts_by_token(&dfa, initial);
-        assert_eq!(reset.get(&1), Some(&(0, 1)));
-        assert_eq!(reset.get(&3), Some(&(0, 1)));
-    }
-
-    #[test]
-    fn compute_adjustments_zero_counters_match_formula() {
-        let dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        let counts = dfa
-            .compute_counts(initial)
-            .expect("compute_counts should succeed");
-        let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false)
-            .expect("compute_adjustments should succeed");
-
-        assert_eq!(adjustments.token_ids, counts.token_ids);
-        assert!(adjustments
-            .adjustments
-            .iter()
-            .all(|&adjustment| adjustment == 0.0));
-    }
-
-    #[test]
-    fn compute_adjustments_populated_counters_match_formula() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        dfa.update_path_counter("ab")
-            .expect("path counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("local counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("second local counter update should succeed");
-
-        let counts = dfa
-            .compute_counts(initial)
-            .expect("compute_counts should succeed");
-        let adjustments = dfa
-            .compute_adjustments(initial, 3.0, false, false)
-            .expect("compute_adjustments should succeed");
-        let reward_sum: u32 = counts.reward_counts.iter().sum();
-
-        assert_eq!(adjustments.token_ids, counts.token_ids);
-        for ((&reward_count, &penalty_count), &adjustment) in counts
-            .reward_counts
-            .iter()
-            .zip(&counts.penalty_counts)
-            .zip(&adjustments.adjustments)
-        {
-            assert_close(
-                adjustment,
-                expected_adjustment(reward_sum, reward_count, penalty_count, 3.0, false, false),
-            );
-        }
-    }
-
-    #[test]
-    fn compute_adjustments_ablation_flags_match_formula() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        dfa.update_path_counter("ab")
-            .expect("path counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("local counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("second local counter update should succeed");
-
-        let counts = dfa
-            .compute_counts(initial)
-            .expect("compute_counts should succeed");
-        let reward_sum: u32 = counts.reward_counts.iter().sum();
-        for (no_reward, no_penalty) in [(true, false), (false, true), (true, true)] {
-            let adjustments = dfa
-                .compute_adjustments(initial, 3.0, no_reward, no_penalty)
-                .expect("compute_adjustments should succeed");
-            assert_eq!(adjustments.token_ids, counts.token_ids);
-            for ((&reward_count, &penalty_count), &adjustment) in counts
-                .reward_counts
-                .iter()
-                .zip(&counts.penalty_counts)
-                .zip(&adjustments.adjustments)
-            {
-                assert_close(
-                    adjustment,
-                    expected_adjustment(
-                        reward_sum,
-                        reward_count,
-                        penalty_count,
-                        3.0,
-                        no_reward,
-                        no_penalty,
-                    ),
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn fork_shares_index_but_resets_counters() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        dfa.update_path_counter("ab")
-            .expect("path counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("local counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("second local counter update should succeed");
-
-        let forked = dfa.fork();
-        let original_counts = counts_by_token(&dfa, initial);
-        let forked_counts = counts_by_token(&forked, initial);
-        assert_eq!(original_counts.get(&3), Some(&(1, 2)));
-        assert_eq!(forked_counts.get(&3), Some(&(0, 1)));
-    }
-
-    #[test]
-    fn bincode_roundtrip_preserves_state() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        dfa.update_path_counter("ab")
-            .expect("path counter update should succeed");
-        dfa.update_local_state_counter(initial, 3)
-            .expect("local counter update should succeed");
-
-        let bytes =
-            bincode::encode_to_vec(&dfa, config::standard()).expect("encoding must succeed");
-        let (decoded, _): (DiverseGuideDFA, usize) =
-            bincode::decode_from_slice(&bytes, config::standard()).expect("decoding must succeed");
-        assert_eq!(decoded, dfa);
-        assert_eq!(
-            counts_by_token(&decoded, initial),
-            counts_by_token(&dfa, initial)
-        );
-    }
-
-    #[test]
-    fn allowed_bytes_match_transition_table_keys() {
-        let dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        let transitions = dfa.get_transitions();
         let mut allowed = dfa
             .get_allowed_bytes(initial)
             .expect("allowed bytes from initial state");
         allowed.sort_unstable();
-
-        let mut from_transition_map: Vec<u8> = transitions
+        let mut from_transition_map: Vec<u8> = dfa
+            .get_transitions()
             .get(&initial)
             .expect("initial state must exist in transitions")
             .keys()
@@ -1231,136 +1052,133 @@ mod tests {
             .collect();
         from_transition_map.sort_unstable();
         assert_eq!(allowed, from_transition_map);
+
+        assert!(format!("{}", dfa).contains("DiverseGuideDFA with transitions:"));
     }
 
     #[test]
-    fn byte_state_sequence_handles_eos_and_invalid_token_id() {
-        let dfa = toy_dfa();
-        let eos = 999;
+    fn error_paths_return_expected_errors() {
+        let err = DiverseGuideDFA::new("[", 0, Map::default()).expect_err("must fail");
+        assert!(matches!(err, Error::IndexDfaError(_)));
+
+        let mut dfa = toy_dfa();
         let initial = dfa.get_initial_state();
-        let final_state = *dfa
-            .get_state_sequence("ab")
-            .expect("state sequence must be valid")
-            .last()
-            .expect("non-empty sequence");
+        assert!(matches!(
+            dfa.get_allowed_token_ids(u32::MAX),
+            Err(Error::InvalidState(_))
+        ));
+        assert!(matches!(
+            dfa.compute_counts(u32::MAX),
+            Err(Error::InvalidState(_))
+        ));
+        assert!(matches!(
+            dfa.compute_adjustments(u32::MAX, 3.0, false, false),
+            Err(Error::InvalidState(_))
+        ));
+        // Token 4 ('x') is not valid from the initial state of regex "ab".
+        assert!(matches!(
+            dfa.get_next_token_state(initial, 4),
+            Err(Error::NoTokenTransitionFound(_, _))
+        ));
+        assert!(matches!(
+            dfa.get_byte_state_sequence(initial, 123456),
+            Err(Error::InvalidTokenId(_))
+        ));
+        assert!(matches!(
+            dfa.update_path_counter("ax"),
+            Err(Error::NoTransitionFound(_, _))
+        ));
+    }
+
+    #[test]
+    fn eos_is_a_final_state_self_edge() {
+        let dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        let final_state = toy_final_state(&dfa);
+
+        let initial_tokens = dfa
+            .get_allowed_token_ids(initial)
+            .expect("allowed tokens from initial");
+        assert!(!initial_tokens.contains(&EOS));
+        let final_tokens = dfa
+            .get_allowed_token_ids(final_state)
+            .expect("allowed tokens from final");
+        assert!(final_tokens.contains(&EOS));
 
         let eos_seq = dfa
-            .get_byte_state_sequence(final_state, eos)
+            .get_byte_state_sequence(final_state, EOS)
             .expect("eos sequence should be valid at final state");
         assert_eq!(eos_seq, vec![final_state, final_state]);
 
-        let err = dfa
-            .get_byte_state_sequence(initial, 123456)
-            .expect_err("unknown token id should fail");
-        assert!(matches!(err, Error::InvalidTokenId(_)));
-    }
-
-    #[test]
-    fn cached_token_state_paths_match_byte_state_walk() {
-        let dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        let token_path = dfa
-            .get_byte_state_sequence(initial, 3)
-            .expect("token 'ab' path should be cached");
-        let string_path = dfa
-            .get_state_sequence("ab")
-            .expect("string path should be valid");
-        assert_eq!(token_path, string_path);
-    }
-
-    #[test]
-    fn allowed_token_metadata_matches_transition_and_state_path_maps() {
-        let dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        let infos = dfa
+        let eos_info = dfa
             .index
-            .get_allowed_token_infos(initial)
-            .expect("metadata for initial state");
-
-        for info in infos {
-            let next_state = dfa
-                .index
-                .token_transitions
-                .get(&initial)
-                .and_then(|tokens| tokens.get(&info.token_id))
-                .copied()
-                .expect("metadata token must have transition");
-            assert_eq!(info.next_state, next_state);
-
-            let state_path = dfa
-                .index
-                .token_state_paths
-                .get(&initial)
-                .and_then(|paths| paths.get(&info.token_id))
-                .expect("metadata token must have state path");
-            let expected_edges: Vec<(u32, u32)> =
-                state_path.windows(2).map(|w| (w[0], w[1])).collect();
-            assert_eq!(info.edge_indices.len(), expected_edges.len());
-            assert_eq!(info.state_indices.len(), state_path[1..].len());
-        }
+            .get_allowed_token_infos(final_state)
+            .expect("metadata for final state")
+            .iter()
+            .find(|info| info.token_id == EOS)
+            .expect("EOS metadata must exist at final state");
+        assert_eq!(eos_info.next_state, final_state);
+        assert_eq!(eos_info.edge_indices.len(), 1);
+        assert_eq!(eos_info.state_indices.len(), 1);
+        assert_eq!(
+            dfa.index.edge_to_idx.get(&(final_state, final_state)),
+            eos_info.edge_indices.first()
+        );
+        assert_eq!(
+            dfa.index.state_to_idx.get(&final_state),
+            eos_info.state_indices.first()
+        );
     }
 
     #[test]
-    fn dense_metadata_indices_match_state_id_paths() {
+    fn allowed_token_metadata_is_consistent_with_index_maps() {
         let dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
 
+        // Token "ab" follows the same state path as the string "ab".
+        assert_eq!(
+            dfa.get_byte_state_sequence(initial, 3)
+                .expect("token 'ab' path should be cached"),
+            dfa.get_state_sequence("ab")
+                .expect("string path should be valid")
+        );
+
+        let mut expected_states = Map::default();
+        let mut expected_edges = Map::default();
         for (state, infos) in &dfa.index.allowed_token_infos {
             for info in infos {
+                let next_state = dfa
+                    .index
+                    .token_transitions
+                    .get(state)
+                    .and_then(|tokens| tokens.get(&info.token_id))
+                    .copied()
+                    .expect("metadata token must have transition");
+                assert_eq!(info.next_state, next_state);
+
                 let state_path = dfa
                     .index
                     .token_state_paths
                     .get(state)
                     .and_then(|paths| paths.get(&info.token_id))
                     .expect("metadata token must have state path");
-                for (edge, edge_idx) in state_path
-                    .windows(2)
-                    .map(|w| (w[0], w[1]))
-                    .zip(&info.edge_indices)
-                {
-                    assert_eq!(dfa.index.edge_to_idx.get(&edge), Some(edge_idx));
+                let edges: Vec<(u32, u32)> = state_path.windows(2).map(|w| (w[0], w[1])).collect();
+                assert_eq!(info.edge_indices.len(), edges.len());
+                assert_eq!(info.state_indices.len(), state_path[1..].len());
+                for (edge, edge_idx) in edges.iter().zip(&info.edge_indices) {
+                    assert_eq!(dfa.index.edge_to_idx.get(edge), Some(edge_idx));
+                    expected_edges.insert(*edge, ());
                 }
-                for (state, state_idx) in state_path[1..].iter().zip(&info.state_indices) {
-                    assert_eq!(dfa.index.state_to_idx.get(state), Some(state_idx));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn dense_index_scope_is_metadata_referenced_states_and_edges() {
-        let dfa = toy_dfa();
-        let mut expected_states = Map::default();
-        let mut expected_edges = Map::default();
-
-        for path_map in dfa.index.token_state_paths.values() {
-            for state_path in path_map.values() {
-                for &state in &state_path[1..] {
-                    expected_states.insert(state, ());
-                }
-                for edge in state_path.windows(2).map(|w| (w[0], w[1])) {
-                    expected_edges.insert(edge, ());
+                for (path_state, state_idx) in state_path[1..].iter().zip(&info.state_indices) {
+                    assert_eq!(dfa.index.state_to_idx.get(path_state), Some(state_idx));
+                    expected_states.insert(*path_state, ());
                 }
             }
         }
 
+        // Dense indices cover exactly the states and edges referenced by metadata.
         assert_eq!(dfa.index.state_to_idx.len(), expected_states.len());
         assert_eq!(dfa.index.edge_to_idx.len(), expected_edges.len());
-        for state in expected_states.keys() {
-            assert!(dfa.index.state_to_idx.contains_key(state));
-        }
-        for edge in expected_edges.keys() {
-            assert!(dfa.index.edge_to_idx.contains_key(edge));
-        }
-    }
-
-    #[test]
-    fn allowed_token_order_matches_compute_counts_order() {
-        let dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-        let allowed = dfa
-            .get_allowed_token_ids(initial)
-            .expect("allowed tokens from initial");
-        assert_eq!(allowed, token_ids_from_counts(&dfa, initial));
     }
 
     #[test]
@@ -1377,8 +1195,11 @@ mod tests {
             .get_allowed_token_ids(initial)
             .expect("allowed tokens from initial");
         assert_eq!(allowed, vec![10, 20, 30]);
-        assert_eq!(allowed, token_ids_from_counts(&dfa, initial));
-
+        let count_tokens = dfa
+            .compute_counts(initial)
+            .expect("compute_counts should succeed")
+            .token_ids;
+        assert_eq!(count_tokens, allowed);
         let adjustment_tokens = dfa
             .compute_adjustments(initial, 3.0, false, false)
             .expect("compute_adjustments should succeed")
@@ -1430,56 +1251,110 @@ mod tests {
     }
 
     #[test]
-    fn eos_metadata_is_final_state_self_edge() {
-        let dfa = toy_dfa();
-        let eos = 999;
-        let final_state = *dfa
-            .get_state_sequence("ab")
-            .expect("state sequence must be valid")
-            .last()
-            .expect("non-empty sequence");
-        let eos_info = dfa
-            .index
-            .get_allowed_token_infos(final_state)
-            .expect("metadata for final state")
-            .iter()
-            .find(|info| info.token_id == eos)
-            .expect("EOS metadata must exist at final state");
-
-        assert_eq!(eos_info.next_state, final_state);
-        assert_eq!(eos_info.edge_indices.len(), 1);
-        assert_eq!(eos_info.state_indices.len(), 1);
-        assert_eq!(
-            dfa.index.edge_to_idx.get(&(final_state, final_state)),
-            eos_info.edge_indices.first()
-        );
-        assert_eq!(
-            dfa.index.state_to_idx.get(&final_state),
-            eos_info.state_indices.first()
-        );
-    }
-
-    fn reward_count(dfa: &DiverseGuideDFA, state: u32, token_id: TokenId) -> u32 {
-        counts_by_token(dfa, state)
-            .get(&token_id)
-            .expect("token must be allowed from state")
-            .0
-    }
-
-    fn all_reward_counts_zero(dfa: &DiverseGuideDFA, state: u32) -> bool {
-        counts_by_token(dfa, state)
-            .values()
-            .all(|(reward, _)| *reward == 0)
-    }
-
-    #[test]
-    fn commit_valid_token_path_updates_only_complete_valid_sequences() {
+    fn counters_affect_compute_counts_and_can_be_reset() {
         let mut dfa = toy_dfa();
         let initial = dfa.get_initial_state();
 
+        let before = counts_by_token(&dfa, initial);
+        // Default: no path history -> reward 0, no local history -> penalty 1.
+        assert_eq!(before.get(&1), Some(&(0, 1)));
+        assert_eq!(before.get(&3), Some(&(0, 1)));
+
+        let mut dfa_with_counts = toy_dfa_with_counters();
+        let after = counts_by_token(&dfa_with_counts, initial);
+        assert_eq!(after.get(&1), Some(&(1, 2)));
+        assert_eq!(after.get(&3), Some(&(1, 2)));
+
+        dfa_with_counts.reset_path_counter();
+        dfa_with_counts.reset_local_state_counter();
+        assert_eq!(counts_by_token(&dfa_with_counts, initial), before);
+
+        dfa.update_local_state_counter(initial, 3)
+            .expect("local counter update should succeed");
+        assert_eq!(counts_by_token(&dfa, initial).get(&3), Some(&(0, 1)));
+    }
+
+    #[test]
+    fn compute_adjustments_match_formula() {
+        let fresh = toy_dfa();
+        let initial = fresh.get_initial_state();
+        let zero = fresh
+            .compute_adjustments(initial, 3.0, false, false)
+            .expect("compute_adjustments should succeed");
+        // Without path history the reward numerator ln(1 + 0) is zero.
+        assert!(zero.adjustments.iter().all(|&adjustment| adjustment == 0.0));
+
+        let dfa = toy_dfa_with_counters();
+        let counts = dfa
+            .compute_counts(initial)
+            .expect("compute_counts should succeed");
+        let reward_sum: u32 = counts.reward_counts.iter().sum();
+        for (no_reward, no_penalty) in [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let adjustments = dfa
+                .compute_adjustments(initial, 3.0, no_reward, no_penalty)
+                .expect("compute_adjustments should succeed");
+            assert_eq!(adjustments.token_ids, counts.token_ids);
+            for ((&reward_count, &penalty_count), &adjustment) in counts
+                .reward_counts
+                .iter()
+                .zip(&counts.penalty_counts)
+                .zip(&adjustments.adjustments)
+            {
+                assert_close(
+                    adjustment,
+                    expected_adjustment(
+                        reward_sum,
+                        reward_count,
+                        penalty_count,
+                        3.0,
+                        no_reward,
+                        no_penalty,
+                    ),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fork_shares_index_but_resets_counters() {
+        let dfa = toy_dfa_with_counters();
+        let initial = dfa.get_initial_state();
+
+        let forked = dfa.fork();
+        assert_eq!(counts_by_token(&dfa, initial).get(&3), Some(&(1, 2)));
+        assert_eq!(counts_by_token(&forked, initial).get(&3), Some(&(0, 1)));
+    }
+
+    #[test]
+    fn bincode_roundtrip_preserves_state() {
+        let dfa = toy_dfa_with_counters();
+        let initial = dfa.get_initial_state();
+
+        let bytes =
+            bincode::encode_to_vec(&dfa, config::standard()).expect("encoding must succeed");
+        let (decoded, _): (DiverseGuideDFA, usize) =
+            bincode::decode_from_slice(&bytes, config::standard()).expect("decoding must succeed");
+        assert_eq!(decoded, dfa);
+        assert_eq!(
+            counts_by_token(&decoded, initial),
+            counts_by_token(&dfa, initial)
+        );
+    }
+
+    #[test]
+    fn commit_valid_token_path_commits_only_complete_valid_sequences() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+
+        // An unfinished prefix and a sequence with an invalid token leave the
+        // counter untouched (the commit is atomic).
         assert!(!dfa
             .commit_valid_token_path(&[1])
             .expect("valid prefix should not fail"));
+        assert!(!dfa
+            .commit_valid_token_path(&[1, 4])
+            .expect("invalid token sequence should return false"));
         assert!(all_reward_counts_zero(&dfa, initial));
 
         assert!(dfa
@@ -1487,17 +1362,6 @@ mod tests {
             .expect("complete token path should commit"));
         assert_eq!(reward_count(&dfa, initial, 3), 1);
         assert_eq!(reward_count(&dfa, initial, 1), 1);
-    }
-
-    #[test]
-    fn commit_valid_token_path_is_atomic_for_invalid_tokens() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-
-        assert!(!dfa
-            .commit_valid_token_path(&[1, 4])
-            .expect("invalid token sequence should return false"));
-        assert!(all_reward_counts_zero(&dfa, initial));
     }
 
     #[test]
@@ -1514,60 +1378,46 @@ mod tests {
             .commit_valid_token_path(&[3])
             .expect("implicit EOS path should commit"));
         assert!(explicit_eos
-            .commit_valid_token_path(&[3, 999])
+            .commit_valid_token_path(&[3, EOS])
             .expect("explicit EOS path should commit"));
         assert!(padded
-            .commit_valid_token_path(&[1, 2, 999, 4, 4])
+            .commit_valid_token_path(&[1, 2, EOS, 4, 4])
             .expect("tokens after EOS should be ignored"));
 
         let implicit_counts = counts_by_token(&implicit_eos, final_state);
-        assert_eq!(implicit_counts.get(&999).map(|c| c.0), Some(1));
+        assert_eq!(implicit_counts.get(&EOS).map(|c| c.0), Some(1));
         assert_eq!(implicit_counts, counts_by_token(&explicit_eos, final_state));
         assert_eq!(implicit_counts, counts_by_token(&padded, final_state));
     }
 
     #[test]
-    fn commit_valid_string_matches_token_commit_for_complete_strings() {
-        let mut from_string = toy_dfa();
+    fn commit_valid_string_matches_token_commit_and_skips_invalid_strings() {
+        let mut dfa = toy_dfa();
+        let initial = dfa.get_initial_state();
+        for rejected in ["a", "ax", "abb"] {
+            assert!(!dfa
+                .commit_valid_string(rejected)
+                .expect("prefix, invalid, or overlong string should not fail"));
+        }
+        assert!(all_reward_counts_zero(&dfa, initial));
+
         let mut from_tokens = toy_dfa();
-        let initial = from_string.get_initial_state();
-        let final_state = from_string
+        let final_state = dfa
             .get_next_token_state(initial, 3)
             .expect("ab token should be valid");
-
-        assert!(from_string
+        assert!(dfa
             .commit_valid_string("ab")
             .expect("complete string should commit"));
         assert!(from_tokens
             .commit_valid_token_path(&[1, 2])
             .expect("complete token path should commit"));
-
-        assert_eq!(
-            counts_by_token(&from_string, initial),
-            counts_by_token(&from_tokens, initial)
-        );
-        assert_eq!(
-            counts_by_token(&from_string, final_state),
-            counts_by_token(&from_tokens, final_state)
-        );
-        assert_eq!(reward_count(&from_string, final_state, 999), 1);
-    }
-
-    #[test]
-    fn commit_valid_string_skips_prefixes_and_invalid_strings() {
-        let mut dfa = toy_dfa();
-        let initial = dfa.get_initial_state();
-
-        assert!(!dfa
-            .commit_valid_string("a")
-            .expect("prefix should not fail"));
-        assert!(!dfa
-            .commit_valid_string("ax")
-            .expect("invalid string should not fail"));
-        assert!(!dfa
-            .commit_valid_string("abb")
-            .expect("overlong string should not fail"));
-        assert!(all_reward_counts_zero(&dfa, initial));
+        for state in [initial, final_state] {
+            assert_eq!(
+                counts_by_token(&dfa, state),
+                counts_by_token(&from_tokens, state)
+            );
+        }
+        assert_eq!(reward_count(&dfa, final_state, EOS), 1);
     }
 
     #[test]
@@ -1584,32 +1434,6 @@ mod tests {
 
         dfa.update_path_counter("ab")
             .expect("full replay should succeed");
-        assert_eq!(reward_count(&dfa, final_state, 999), 0);
-    }
-
-    #[test]
-    fn update_methods_surface_transition_and_state_errors() {
-        let mut dfa = toy_dfa();
-        let invalid_path_err = dfa
-            .update_path_counter("ax")
-            .expect_err("x is not accepted after a in regex ab");
-        assert!(matches!(invalid_path_err, Error::NoTransitionFound(_, _)));
-
-        let invalid_state_err = dfa
-            .compute_counts(u32::MAX)
-            .expect_err("invalid state should fail");
-        assert!(matches!(invalid_state_err, Error::InvalidState(_)));
-
-        let invalid_adjustments_err = dfa
-            .compute_adjustments(u32::MAX, 3.0, false, false)
-            .expect_err("invalid state should fail");
-        assert!(matches!(invalid_adjustments_err, Error::InvalidState(_)));
-    }
-
-    #[test]
-    fn display_includes_expected_header() {
-        let dfa = toy_dfa();
-        let display = format!("{}", dfa);
-        assert!(display.contains("DiverseGuideDFA with transitions:"));
+        assert_eq!(reward_count(&dfa, final_state, EOS), 0);
     }
 }

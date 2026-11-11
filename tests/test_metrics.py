@@ -12,130 +12,34 @@ from diverse_guide.evaluation.metrics import (
     vendi_score,
 )
 
-# ---------------------------------------------------------------------------
-# get_coverage_ratio
-# ---------------------------------------------------------------------------
 
-
-def test_coverage_ratio_all_covered():
-    counts = {"x": 2, "y": 3}
-    assert get_coverage_ratio(counts, threshold=1) == 1.0
-
-
-def test_coverage_ratio_none_covered():
-    counts = {"x": 0, "y": 0}
-    assert get_coverage_ratio(counts, threshold=1) == 0.0
-
-
-def test_coverage_ratio_partial():
-    counts = {"x": 1, "y": 0}
-    assert get_coverage_ratio(counts, threshold=1) == 0.5
-
-
-def test_coverage_ratio_threshold():
-    counts = {"x": 1, "y": 3}
-    # threshold=2: only 'y' meets threshold
-    assert get_coverage_ratio(counts, threshold=2) == 0.5
-
-
-def test_coverage_ratio_empty_mapping():
+def test_coverage_ratio_counts_entries_meeting_threshold():
+    assert get_coverage_ratio({"x": 2, "y": 3}, threshold=1) == 1.0
+    assert get_coverage_ratio({"x": 0, "y": 0}, threshold=1) == 0.0
+    assert get_coverage_ratio({"x": 1, "y": 0}, threshold=1) == 0.5
+    assert get_coverage_ratio({"x": 1, "y": 3}, threshold=2) == 0.5
     assert get_coverage_ratio({}, threshold=1) == 0.0
 
 
-# ---------------------------------------------------------------------------
-# state_coverage
-# ---------------------------------------------------------------------------
+def test_dfa_coverage_metrics(dfa_single):
+    # (?:[ab])$ has two states (initial, final), two transitions (a, b), and a
+    # single initial-to-final state path.
+    assert state_coverage(dfa_single, ["a"]) == 1.0
+    assert state_coverage(dfa_single, ["a", "b"]) == 1.0
+    assert transition_coverage(dfa_single, ["a"]) == pytest.approx(0.5)
+    assert transition_coverage(dfa_single, ["a", "b"]) == pytest.approx(1.0)
+    assert path_coverage(dfa_single, ["a"]) == pytest.approx(1.0)
 
 
-def test_state_coverage_full(dfa_single):
-    # Both 'a' and 'b' visit both states of (?:[ab])$ (initial and final)
-    cov = state_coverage(dfa_single, ["a", "b"])
-    assert cov == 1.0
-
-
-def test_state_coverage_single_input(dfa_single):
-    # A single input 'a' visits initial + final → 100% state coverage
-    cov = state_coverage(dfa_single, ["a"])
-    assert cov == 1.0
-
-
-def test_state_coverage_step_size_returns_list(dfa_single):
-    result = state_coverage(dfa_single, ["a", "b"], step_size=1)
-    assert isinstance(result, list)
-    assert len(result) == 2
-    assert all(0.0 <= v <= 1.0 for v in result)
-
-
-def test_state_coverage_step_size_monotone(dfa_single):
-    result = state_coverage(dfa_single, ["a", "b"], step_size=1)
-    # Coverage should be non-decreasing
-    assert result[0] <= result[1]
-
-
-def test_state_coverage_step_size_appends_remainder(dfa_single):
-    result = state_coverage(dfa_single, ["a", "b", "a"], step_size=2)
-
-    assert len(result) == 2
-    assert all(0.0 <= v <= 1.0 for v in result)
-
-
-# ---------------------------------------------------------------------------
-# transition_coverage
-# ---------------------------------------------------------------------------
-
-
-def test_transition_coverage_partial(dfa_single):
-    # (?:[ab])$ has two transitions: initial->(a)->final, initial->(b)->final
-    # Input 'a' uses only the a-transition → 50%
-    cov = transition_coverage(dfa_single, ["a"])
-    assert cov == pytest.approx(0.5)
-
-
-def test_transition_coverage_full(dfa_single):
-    cov = transition_coverage(dfa_single, ["a", "b"])
-    assert cov == pytest.approx(1.0)
-
-
-def test_transition_coverage_step_size(dfa_single):
-    result = transition_coverage(dfa_single, ["a", "b"], step_size=1)
-    assert isinstance(result, list)
-    assert len(result) == 2
-
-
-def test_transition_coverage_step_size_appends_remainder(dfa_single):
-    result = transition_coverage(dfa_single, ["a", "b", "a"], step_size=2)
-
-    assert len(result) == 2
-    assert all(0.0 <= v <= 1.0 for v in result)
-
-
-# ---------------------------------------------------------------------------
-# path_coverage
-# ---------------------------------------------------------------------------
-
-
-def test_path_coverage_full_with_one_input(dfa_single):
-    # (?:[ab])$ : both 'a' and 'b' go through the same (initial, final) state pair
-    # so a single input covers all paths
-    cov = path_coverage(dfa_single, ["a"])
-    assert cov == pytest.approx(1.0)
-
-
-def test_path_coverage_step_size(dfa_single):
-    result = path_coverage(dfa_single, ["a", "b"], step_size=1)
-    assert isinstance(result, list)
-
-
-def test_path_coverage_step_size_appends_remainder(dfa_single):
-    result = path_coverage(dfa_single, ["a", "b", "a"], step_size=2)
-
-    assert len(result) == 2
-    assert all(0.0 <= v <= 1.0 for v in result)
-
-
-# ---------------------------------------------------------------------------
-# vendi_score
-# ---------------------------------------------------------------------------
+def test_dfa_coverage_metrics_with_step_size(dfa_single):
+    for metric in (state_coverage, transition_coverage, path_coverage):
+        stepwise = metric(dfa_single, ["a", "b"], step_size=1)
+        assert isinstance(stepwise, list) and len(stepwise) == 2
+        assert stepwise[0] <= stepwise[1]
+        # A trailing partial step is reported as an extra point.
+        with_remainder = metric(dfa_single, ["a", "b", "a"], step_size=2)
+        assert len(with_remainder) == 2
+        assert all(0.0 <= v <= 1.0 for v in with_remainder)
 
 
 def _identity_kernel(inputs):
@@ -149,69 +53,21 @@ def _ones_kernel(inputs):
     return np.ones((n, n))
 
 
-def test_vendi_score_identity_kernel():
-    # With identity kernel, n=2 → vendi ≈ 2
-    score = vendi_score(["a", "b"], _identity_kernel)
-    assert score == pytest.approx(2.0, rel=1e-3)
+def test_vendi_score_extremes_and_step_size():
+    assert vendi_score(["a", "b"], _identity_kernel) == pytest.approx(2.0, rel=1e-3)
+    assert vendi_score(["a", "b"], _ones_kernel) == pytest.approx(1.0, rel=1e-3)
+    assert vendi_score(["a"], _identity_kernel) == pytest.approx(1.0, rel=1e-3)
+
+    stepwise = vendi_score(["a", "b", "c", "d"], _identity_kernel, step_size=2)
+    assert stepwise == pytest.approx([2.0, 4.0], rel=1e-3)
+    with_remainder = vendi_score(["a", "b", "c"], _identity_kernel, step_size=2)
+    assert with_remainder == pytest.approx([2.0, 3.0], rel=1e-3)
 
 
-def test_vendi_score_ones_kernel():
-    # All-ones kernel (rank-1) → vendi ≈ 1
-    score = vendi_score(["a", "b"], _ones_kernel)
-    assert score == pytest.approx(1.0, rel=1e-3)
-
-
-def test_vendi_score_single():
-    score = vendi_score(["a"], _identity_kernel)
-    assert score == pytest.approx(1.0, rel=1e-3)
-
-
-def test_vendi_score_step_size_returns_list():
-    inputs = ["a", "b", "c", "d"]
-    result = vendi_score(inputs, _identity_kernel, step_size=2)
-    assert isinstance(result, list)
-    # step_size=2, len=4: indices 2, 4 (but 4==len, handled by remainder check)
-    assert len(result) >= 1
-
-
-def test_vendi_score_step_size_appends_remainder():
-    inputs = ["a", "b", "c"]
-    result = vendi_score(inputs, _identity_kernel, step_size=2)
-
-    assert len(result) == 2
-    assert result[-1] == pytest.approx(3.0, rel=1e-3)
-
-
-# ---------------------------------------------------------------------------
-# distinct_ngram
-# ---------------------------------------------------------------------------
-
-
-def test_distinct_ngram_unigrams():
-    count, n_inputs = distinct_ngram(["aa", "bb"], n=1)
-    # 'a', 'a', 'b', 'b' → 2 distinct unigrams
-    assert count == 2
-    assert n_inputs == 2
-
-
-def test_distinct_ngram_bigrams():
-    count, n_inputs = distinct_ngram(["ab", "ba"], n=2)
-    assert count == 2  # 'ab' and 'ba'
-    assert n_inputs == 2
-
-
-def test_distinct_ngram_duplicates():
-    count, _ = distinct_ngram(["aa", "aa"], n=2)
-    assert count == 1  # only 'aa'
-
-
-def test_distinct_ngram_empty_inputs():
-    count, n_inputs = distinct_ngram([], n=2)
-    assert count == 0
-    assert n_inputs == 0
-
-
-def test_distinct_ngram_longer_than_string():
-    # n=5 for a 3-char string → no ngrams
-    count, _ = distinct_ngram(["abc"], n=5)
-    assert count == 0
+def test_distinct_ngram():
+    assert distinct_ngram(["aa", "bb"], n=1) == (2, 2)
+    assert distinct_ngram(["ab", "ba"], n=2) == (2, 2)
+    assert distinct_ngram(["aa", "aa"], n=2)[0] == 1
+    assert distinct_ngram([], n=2) == (0, 0)
+    # n longer than the string yields no n-grams.
+    assert distinct_ngram(["abc"], n=5)[0] == 0

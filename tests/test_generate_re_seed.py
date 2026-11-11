@@ -7,7 +7,7 @@ from diverse_guide import PURE_SAMPLING_DEFAULTS
 from scripts.generate_re import GeneratedData, set_generation_seed
 
 
-def test_generated_data_round_trips_seed():
+def test_generated_data_round_trips_and_accepts_legacy_payloads():
     data = GeneratedData(
         grammar="css-color",
         regex="#[0-9a-fA-F]{6}",
@@ -23,40 +23,37 @@ def test_generated_data_round_trips_seed():
         attempted_batches=3,
         accepted_samples=1,
         rejected_samples=2,
+        sampling_parameters=dict(PURE_SAMPLING_DEFAULTS),
     )
 
     payload = data.to_dict()
-    restored = GeneratedData.from_dict(payload)
-
     assert payload["seed"] == 42
     assert payload["elapsed_seconds"] == 12.5
-    assert restored.seed == 42
-    assert restored.attempted_batches == 3
-    assert restored.accepted_samples == 1
-    assert restored.rejected_samples == 2
+    assert GeneratedData.from_dict(payload) == data
 
-
-def test_generated_data_accepts_legacy_payload_without_seed():
-    restored = GeneratedData.from_dict(
-        {
-            "grammar": "css-color",
-            "regex": "#[0-9a-fA-F]{6}",
-            "prompt": "Give me a CSS color code.",
-            "model": "test/model",
-            "max_tokens": 18,
-            "top_k": None,
-            "top_p": None,
-            "temperature": None,
-            "samples": ["#aabbcc"],
-        }
-    )
-
+    # Payloads written before seeds, metrics, and sampling parameters existed.
+    legacy = {
+        key: payload[key]
+        for key in (
+            "grammar",
+            "regex",
+            "prompt",
+            "model",
+            "max_tokens",
+            "top_k",
+            "top_p",
+            "temperature",
+            "samples",
+        )
+    }
+    restored = GeneratedData.from_dict(legacy)
     assert restored.seed is None
     assert restored.elapsed_seconds is None
     assert restored.accepted_samples is None
+    assert restored.sampling_parameters is None
 
 
-def test_set_generation_seed_seeds_python_numpy_and_torch(monkeypatch):
+def test_set_generation_seed(monkeypatch):
     random_seed = Mock()
     numpy_seed = Mock()
     torch_manual_seed = Mock()
@@ -71,51 +68,28 @@ def test_set_generation_seed_seeds_python_numpy_and_torch(monkeypatch):
         torch_cuda_manual_seed_all,
     )
 
-    set_generation_seed(42)
+    set_generation_seed(None)
+    random_seed.assert_not_called()
+    numpy_seed.assert_not_called()
+    torch_manual_seed.assert_not_called()
 
+    set_generation_seed(42)
     random_seed.assert_called_once_with(42)
     numpy_seed.assert_called_once_with(42)
     torch_manual_seed.assert_called_once_with(42)
     torch_cuda_manual_seed_all.assert_called_once_with(42)
 
 
-def test_set_generation_seed_noops_when_seed_is_none(monkeypatch):
-    random_seed = Mock()
-    numpy_seed = Mock()
-    torch_manual_seed = Mock()
-
-    monkeypatch.setattr("scripts.generate_re.random.seed", random_seed)
-    monkeypatch.setattr("scripts.generate_re.np.random.seed", numpy_seed)
-    monkeypatch.setattr("scripts.generate_re.torch.manual_seed", torch_manual_seed)
-
-    set_generation_seed(None)
-
-    random_seed.assert_not_called()
-    numpy_seed.assert_not_called()
-    torch_manual_seed.assert_not_called()
-
-
-def test_parse_args_accepts_local_files_only(monkeypatch):
+def test_parse_args_accepts_local_files_only_and_no_progress(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["generate_re.py", "css-color", "--local-files-only"],
+        ["generate_re.py", "css-color", "--local-files-only", "--no-progress"],
     )
 
     args = generate_re.parse_args()
 
     assert args.local_files_only is True
-
-
-def test_parse_args_accepts_no_progress(monkeypatch):
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["generate_re.py", "css-color", "--no-progress"],
-    )
-
-    args = generate_re.parse_args()
-
     assert args.no_progress is True
 
 

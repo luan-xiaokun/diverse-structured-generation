@@ -1,5 +1,7 @@
 """Tests for DiverseRegexGuide, DiverseRegexLogitsProcessor, and generate_batch."""
 
+import re
+
 import pytest
 import torch
 
@@ -17,86 +19,30 @@ from diverse_guide.guide_rust import (
 # ---------------------------------------------------------------------------
 
 
-def test_guide_construction(mock_tokenizer):
+def test_guide_wraps_regex_and_exposes_token_transitions(mock_tokenizer):
     guide = DiverseRegexGuide("[ab]", mock_tokenizer)
     assert guide.initial_state == guide.dfa.get_initial_state()
     assert guide.eos_token_id == 99
-
-
-def test_guide_regex_wrapping(mock_tokenizer):
-    """Regex must be wrapped with (?:...)$ so the DFA is end-anchored."""
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
-    # The DFA was built with (?:[ab])$ — verify the initial state doesn't accept
-    # empty string but does accept 'a'
+    # The regex is wrapped as (?:[ab])$: the empty string is rejected, "a" accepted.
     assert not guide.dfa.is_final_state(guide.initial_state)
-    seq = guide.dfa.get_state_sequence("a")
-    assert guide.dfa.is_final_state(seq[-1])
+    assert guide.dfa.is_final_state(guide.dfa.get_state_sequence("a")[-1])
 
+    assert sorted(guide.get_next_instruction(guide.initial_state)) == [10, 20]
+    after_a = guide.get_next_state(guide.initial_state, 10)
+    assert after_a != guide.initial_state
+    assert 99 in guide.get_next_instruction(after_a)
 
-def test_guide_get_next_instruction_initial(mock_tokenizer):
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
-    allowed = guide.get_next_instruction(guide.initial_state)
-    assert sorted(allowed) == [10, 20]
-
-
-def test_guide_get_next_instruction_final_state(mock_tokenizer):
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
-    initial = guide.initial_state
-    final_state = guide.dfa.get_next_token_state(initial, 10)  # after 'a'
-    # From a final state, EOS should be included
-    allowed = guide.get_next_instruction(final_state)
-    assert 99 in allowed
-
-
-def test_guide_get_next_instruction_sentinel(mock_tokenizer):
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
-    # State -1 is the "done" sentinel
+    # State -1 is the "done" sentinel.
     assert guide.get_next_instruction(-1) == [99]
-
-
-def test_guide_is_final_state_sentinel(mock_tokenizer):
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
     assert guide.is_final_state(-1)
     assert not guide.is_final_state(guide.initial_state)
 
 
-def test_guide_get_next_state(mock_tokenizer):
-    guide = DiverseRegexGuide("[ab]", mock_tokenizer)
-    initial = guide.initial_state
-    next_state = guide.get_next_state(initial, 10)
-    assert next_state != initial
-
-
 # ---------------------------------------------------------------------------
-# DiverseRegexLogitsProcessor — reset()
+# Logits processors (diverse and mask-only)
 # ---------------------------------------------------------------------------
 
-
-def test_reset_clears_guide_states(mock_tokenizer):
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    # Manually pollute the cache
-    proc._guide_states_by_row = [42]
-    proc._processed_lengths_by_row = [3]
-    proc._seq_start_idx = 5
-
-    proc.reset()
-
-    assert proc._seq_start_idx is None
-    assert proc._guide_states_by_row is None
-    assert proc._processed_lengths_by_row is None
-
-
-def test_reset_restores_initial_state_only(mock_tokenizer):
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    proc.reset()
-    proc._ensure_rows(1)
-    assert proc._guide_states_by_row == [proc.guide.initial_state]
-    assert proc._processed_lengths_by_row == [0]
-
-
-# ---------------------------------------------------------------------------
-# DiverseRegexLogitsProcessor — masking behaviour
-# ---------------------------------------------------------------------------
+PROCESSORS = (DiverseRegexLogitsProcessor, RegexMaskLogitsProcessor)
 
 
 def _make_scores(vocab_size: int = 100, batch_size: int = 1) -> torch.FloatTensor:
@@ -107,21 +53,61 @@ def _make_input_ids(prompt_len: int = 5) -> torch.LongTensor:
     return torch.zeros(1, prompt_len, dtype=torch.long)
 
 
-def test_masking_disallows_non_regex_tokens(mock_tokenizer):
-    """Tokens not in the DFA's allowed set should become -inf."""
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    scores = _make_scores()
-    input_ids = _make_input_ids()
+def test_processors_reset_and_track_row_state(mock_tokenizer):
+    for processor_cls in PROCESSORS:
+        proc = processor_cls("[ab]", mock_tokenizer)
+        proc._guide_states_by_row = [42]
+        proc._processed_lengths_by_row = [3]
+        proc._seq_start_idx = 5
+        proc.reset()
+        assert proc._seq_start_idx is None
+        assert proc._guide_states_by_row is None
+        assert proc._processed_lengths_by_row is None
 
-    proc(input_ids, scores)
+        proc(_make_input_ids(prompt_len=7), _make_scores())
+        assert proc._seq_start_idx == 7
+        assert proc._guide_states_by_row == [proc.guide.initial_state]
+        assert proc._processed_lengths_by_row == [0]
 
-    # Tokens 10 ('a') and 20 ('b') are allowed — must NOT be -inf
-    assert not scores[0, 10].isinf()
-    assert not scores[0, 20].isinf()
 
-    # All other tokens should be -inf
-    for tok in [0, 1, 9, 11, 19, 21, 98]:
-        assert scores[0, tok].item() == float("-inf"), f"token {tok} should be -inf"
+def test_processors_mask_invalid_tokens_and_allow_eos_at_final_state(
+    mock_tokenizer,
+):
+    for processor_cls in PROCESSORS:
+        proc = processor_cls("[ab]", mock_tokenizer)
+        scores = _make_scores()
+        proc(_make_input_ids(), scores)
+        assert not scores[0, 10].isinf()
+        assert not scores[0, 20].isinf()
+        for tok in [0, 1, 9, 11, 19, 21, 98, 99]:
+            assert scores[0, tok].item() == float("-inf"), f"token {tok}"
+
+        # A row that has consumed 'a' is in a final state, so EOS is allowed.
+        proc = processor_cls("[ab]", mock_tokenizer)
+        proc._seq_start_idx = 0
+        proc._guide_states_by_row = [
+            proc.dfa.get_next_token_state(proc.guide.initial_state, 10)
+        ]
+        proc._processed_lengths_by_row = [1]
+        scores = _make_scores()
+        proc(torch.tensor([[10]], dtype=torch.long), scores)
+        assert not scores[0, 99].isinf()
+
+
+def test_processors_keep_only_eos_after_terminal_state(mock_tokenizer):
+    """A finished row followed by a non-DFA token must not crash the processor."""
+    for processor_cls in PROCESSORS:
+        proc = processor_cls("[ab]", mock_tokenizer)
+        proc._seq_start_idx = 0
+        proc._guide_states_by_row = [-1]  # terminal sentinel after one token
+        proc._processed_lengths_by_row = [1]
+        scores = torch.linspace(-1.0, 1.0, 100, dtype=torch.float).unsqueeze(0)
+
+        out = proc(torch.tensor([[10, 77]], dtype=torch.long), scores)
+
+        assert not out[0, 99].isinf()
+        assert out[0, 10].item() == float("-inf")
+        assert out[0, 20].item() == float("-inf")
 
 
 def test_allowed_token_tensor_cache_reuses_state_tensors(mock_tokenizer):
@@ -145,153 +131,23 @@ def test_allowed_token_tensor_cache_reuses_state_tensors(mock_tokenizer):
     assert torch.equal(mask_first, mask_second)
 
 
-def test_masking_eos_at_final_state(mock_tokenizer):
-    """EOS (99) must be allowed when the DFA is in a final state."""
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    initial = proc.guide.initial_state
-
-    # Manually set guide_states so the sequence has already consumed one 'a' token
-    # and is at the final state
-    final_state = proc.dfa.get_next_token_state(initial, 10)
-    proc._seq_start_idx = 0
-    proc._guide_states_by_row = [final_state]
-    proc._processed_lengths_by_row = [1]
-
-    # input_ids: shape (1, 1), representing the token 10 ('a') was already generated
-    input_ids = torch.tensor([[10]], dtype=torch.long)
-    scores = _make_scores()
-
-    proc(input_ids, scores)
-
-    assert not scores[0, 99].isinf(), "EOS should be allowed at final state"
-
-
-# ---------------------------------------------------------------------------
-# DiverseRegexLogitsProcessor — state tracking
-# ---------------------------------------------------------------------------
-
-
-def test_seq_start_idx_set_on_first_call(mock_tokenizer):
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    input_ids = _make_input_ids(prompt_len=7)
-    scores = _make_scores()
-
-    assert proc._seq_start_idx is None
-    proc(input_ids, scores)
-    assert proc._seq_start_idx == 7
-
-
-def test_guide_states_populated_after_call(mock_tokenizer):
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    input_ids = _make_input_ids(prompt_len=0)
-    scores = _make_scores()
-
-    proc(input_ids, scores)
-    assert proc._guide_states_by_row == [proc.guide.initial_state]
-    assert proc._processed_lengths_by_row == [0]
-
-
-def test_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
-    """Processor should not crash if a finished row is followed by a non-DFA token."""
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    proc._seq_start_idx = 0
-    proc._guide_states_by_row = [-1]  # terminal sentinel after one token
-    proc._processed_lengths_by_row = [1]
-
-    input_ids = torch.tensor([[10, 77]], dtype=torch.long)
-    scores = _make_scores()
-
-    out = proc(input_ids, scores)
-    assert not out[0, 99].isinf()  # EOS remains valid at terminal state
-
-
-def test_terminal_sentinel_keeps_only_eos(mock_tokenizer):
-    proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer)
-    proc._seq_start_idx = 0
-    proc._guide_states_by_row = [-1]
-    proc._processed_lengths_by_row = [1]
-
-    input_ids = torch.tensor([[10, 77]], dtype=torch.long)
-    scores = torch.linspace(-1.0, 1.0, 100, dtype=torch.float).unsqueeze(0)
-
-    out = proc(input_ids, scores.clone())
-
-    assert not out[0, 99].isinf()
-    assert out[0, 10].item() == float("-inf")
-
-
-# ---------------------------------------------------------------------------
-# DiverseRegexLogitsProcessor — gamma=0 produces zero adjustment
-# ---------------------------------------------------------------------------
-
-
 def test_gamma_zero_no_adjustment(mock_tokenizer):
     """With gamma=0, logit adjustment is zero; only masking applies."""
-    # compute_counts starts penalty at 1 (prevents div-by-zero)
     proc = DiverseRegexLogitsProcessor("[ab]", mock_tokenizer, gamma=0.0, beta=1.0)
-
     scores = torch.tensor([[1.0] * 100])
-    input_ids = _make_input_ids()
 
-    proc(input_ids, scores)
+    proc(_make_input_ids(), scores)
 
-    # Allowed tokens should still be 1.0 (no adjustment since gamma=0)
     assert scores[0, 10].item() == pytest.approx(1.0)
     assert scores[0, 20].item() == pytest.approx(1.0)
 
 
-def test_baseline_regex_uses_mask_only_processor(mock_tokenizer):
-    generator = gr.baseline_regex(object(), mock_tokenizer, r"a+")
-
-    assert isinstance(generator.logits_processor, RegexMaskLogitsProcessor)
-
-
-# ---------------------------------------------------------------------------
-# RegexMaskLogitsProcessor — internal baseline behaviour
-# ---------------------------------------------------------------------------
-
-
-def test_mask_only_reset_clears_guide_states(mock_tokenizer):
-    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
-    proc._guide_states_by_row = [42]
-    proc._processed_lengths_by_row = [3]
-    proc._seq_start_idx = 5
-
-    proc.reset()
-
-    assert proc._seq_start_idx is None
-    assert proc._guide_states_by_row is None
-    assert proc._processed_lengths_by_row is None
-
-
-def test_mask_only_disallows_non_regex_tokens(mock_tokenizer):
-    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
-    scores = _make_scores()
-
-    proc(_make_input_ids(), scores)
-
-    assert not scores[0, 10].isinf()
-    assert not scores[0, 20].isinf()
-    for tok in [0, 1, 9, 11, 19, 21, 98]:
-        assert scores[0, tok].item() == float("-inf")
-
-
-def test_mask_only_allows_eos_at_final_state(mock_tokenizer):
-    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
-    initial = proc.guide.initial_state
-    final_state = proc.dfa.get_next_token_state(initial, 10)
-    proc._seq_start_idx = 0
-    proc._guide_states_by_row = [final_state]
-    proc._processed_lengths_by_row = [1]
-    scores = _make_scores()
-
-    proc(torch.tensor([[10]], dtype=torch.long), scores)
-
-    assert not scores[0, 99].isinf()
-
-
-def test_mask_only_keeps_batch_rows_independent(mock_tokenizer):
+def test_mask_only_keeps_batch_rows_independent_and_counters_untouched(
+    mock_tokenizer,
+):
     proc = RegexMaskLogitsProcessor("ab", mock_tokenizer)
+    initial = proc.guide.initial_state
+    before = proc.dfa.compute_counts(initial)
     proc._seq_start_idx = 0
     scores = _make_scores(batch_size=2)
 
@@ -303,30 +159,6 @@ def test_mask_only_keeps_batch_rows_independent(mock_tokenizer):
     assert not scores[1, 99].isinf()
     assert scores[1, 10].item() == float("-inf")
     assert scores[1, 20].item() == float("-inf")
-
-
-def test_mask_only_tolerates_invalid_token_after_terminal_state(mock_tokenizer):
-    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
-    proc._seq_start_idx = 0
-    proc._guide_states_by_row = [-1]
-    proc._processed_lengths_by_row = [1]
-    scores = _make_scores()
-
-    out = proc(torch.tensor([[10, 77]], dtype=torch.long), scores)
-
-    assert not out[0, 99].isinf()
-    assert out[0, 10].item() == float("-inf")
-    assert out[0, 20].item() == float("-inf")
-
-
-def test_mask_only_does_not_update_diversity_counters(mock_tokenizer):
-    proc = RegexMaskLogitsProcessor("[ab]", mock_tokenizer)
-    initial = proc.guide.initial_state
-    before = proc.dfa.compute_counts(initial)
-    proc._seq_start_idx = 0
-
-    proc(torch.tensor([[10]], dtype=torch.long), _make_scores())
-
     assert proc.dfa.compute_counts(initial) == before
 
 
@@ -461,53 +293,40 @@ def test_adapter_samples_without_model_generation_config_defaults(mock_tokenizer
 # ---------------------------------------------------------------------------
 
 
-def test_generate_batch_returns_n_results(mock_tokenizer):
-    """generate_batch returns a list of exactly n strings."""
-    n = 4
-    tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
-    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
-
-    results = adapter.generate_batch("prompt", n=n, max_tokens=3)
-
-    assert isinstance(results, list)
-    assert len(results) == n
-    assert all(isinstance(r, str) for r in results)
-
-
-def test_generate_batch_all_match_regex(mock_tokenizer):
-    """Every sequence returned by generate_batch must match the regex."""
-    import re
-
-    n = 3
+def test_generate_batch_returns_valid_samples_and_counts_them(mock_tokenizer):
     tok = _BatchTokenizerMock(mock_tokenizer)
     proc = DiverseRegexLogitsProcessor("[ab]+", tok, gamma=0.0, beta=1.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
+    initial = proc.dfa.get_initial_state()
+    assert all(c == 0 for c in proc.dfa.compute_counts(initial)[1])
 
-    results = adapter.generate_batch("prompt", n=n, max_tokens=3)
+    results = adapter.generate_batch("prompt", n=3, max_tokens=3)
 
-    pattern = re.compile(r"^[ab]+$")
-    for text in results:
-        assert pattern.match(text), f"Generated text does not match regex: {text!r}"
+    assert len(results) == 3
+    assert all(re.fullmatch(r"[ab]+", text) for text in results)
+    assert sum(proc.dfa.compute_counts(initial)[1]) > 0
 
 
-def test_generate_batch_updates_path_counter(mock_tokenizer):
-    """After generate_batch, the global path counter reflects all n sequences."""
-    n = 3
+def test_generate_batch_resets_per_call_state(mock_tokenizer):
+    """generate_batch clears the local state counter and stale row states."""
     tok = _BatchTokenizerMock(mock_tokenizer)
     proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
     adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
-
-    # Record initial reward counts (all zero before any generation)
     initial = proc.dfa.get_initial_state()
-    _, reward_before, _ = proc.dfa.compute_counts(initial)
-    assert all(c == 0 for c in reward_before)
+    for _ in range(5):
+        proc.dfa.update_local_state_counter(initial, 10)
+    assert max(proc.dfa.compute_counts(initial)[2]) > 1
+    proc._guide_states_by_row = [42]
+    proc._processed_lengths_by_row = [3]
+    proc._seq_start_idx = 100
 
-    adapter.generate_batch("prompt", n=n, max_tokens=1)
+    # With max_tokens=1 no generated token is replayed into the local counter.
+    adapter.generate_batch("prompt", n=2, max_tokens=1)
 
-    _, reward_after, _ = proc.dfa.compute_counts(initial)
-    # At least one path must have been counted
-    assert sum(reward_after) > 0
+    assert all(c == 1 for c in proc.dfa.compute_counts(initial)[2])
+    assert proc._seq_start_idx == PROMPT_LEN
+    assert proc._guide_states_by_row is not None
+    assert 42 not in proc._guide_states_by_row
 
 
 def _reward_by_token(proc, state):
@@ -571,52 +390,6 @@ def test_python_reference_counts_only_full_matches():
     adapter.update_generated_content("ab")
     final_state = proc.guide.dfa.get_state_sequence("ab")[-1]
     assert proc.transition_counter[(final_state, final_state)] == 1
-
-
-def test_generate_batch_resets_local_counter(mock_tokenizer):
-    """generate_batch resets local_state_counter before each call."""
-    n = 2
-    tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
-    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
-
-    # Artificially inflate local counter
-    initial = proc.dfa.get_initial_state()
-    for _ in range(5):
-        proc.dfa.update_local_state_counter(initial, 10)
-
-    _, _, penalty_inflated = proc.dfa.compute_counts(initial)
-    assert max(penalty_inflated) > 1  # confirm it was inflated
-
-    # generate_batch should reset the local counter at the start
-    adapter.generate_batch("prompt", n=n, max_tokens=1)
-
-    # After the batch the local counter reflects only what happened in this batch,
-    # not the pre-inflated values.  The simplest invariant: the counter was reset
-    # (i.e. generate_batch called reset_local_state_counter internally).
-    # We can verify by calling reset again and checking counts go to baseline=1.
-    proc.dfa.reset_local_state_counter()
-    _, _, penalty_reset = proc.dfa.compute_counts(initial)
-    assert all(c == 1 for c in penalty_reset)
-
-
-def test_generate_batch_resets_guide_states(mock_tokenizer):
-    """generate_batch calls reset() which clears stale row-state cache."""
-    n = 2
-    tok = _BatchTokenizerMock(mock_tokenizer)
-    proc = DiverseRegexLogitsProcessor("[ab]", tok, gamma=0.0, beta=1.0)
-    adapter = StatefulSequenceGeneratorAdapter(_DeterministicModel(), tok, proc)
-
-    # Pollute state
-    proc._guide_states_by_row = [42]
-    proc._processed_lengths_by_row = [3]
-    proc._seq_start_idx = 100
-
-    adapter.generate_batch("prompt", n=n, max_tokens=1)
-
-    assert proc._seq_start_idx == PROMPT_LEN
-    assert proc._guide_states_by_row is not None
-    assert 42 not in proc._guide_states_by_row
 
 
 class _CoverageTokenizer:
@@ -702,7 +475,7 @@ def _make_scores_cov(batch: int = 1, vocab: int = 128):
     return torch.zeros(batch, vocab)
 
 
-def test_python_guide_terminal_none_and_exception_paths():
+def test_python_reference_guide_and_processor_branches():
     tok = _CoverageTokenizer()
     guide = gp.DiverseRegexGuide("[ab]", tok)
     assert guide.get_next_instruction(-1) == [tok.eos_token_id]
@@ -724,9 +497,6 @@ def test_python_guide_terminal_none_and_exception_paths():
     guide_raise.dfa = _DfaRaise()
     assert guide_raise.get_state_sequence_from_token_id(0, 10) == []
 
-
-def test_python_processor_state_branches():
-    tok = _CoverageTokenizer()
     proc = gp.DiverseRegexLogitsProcessor("[ab]", tok)
     proc._seq_start_idx = 0
     proc._guide_states[(10,)] = -1
