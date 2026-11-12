@@ -17,6 +17,9 @@ pub type StateId = u32;
 pub type TokenId = u64;
 pub type Byte = u8;
 
+/// Byte-level DFA transitions: source state -> (byte -> target state).
+type ByteTransitions = HashMap<StateId, HashMap<Byte, StateId>>;
+
 /// Precomputed metadata for one token transition from a DFA state.
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 struct AllowedTokenInfo {
@@ -97,7 +100,7 @@ impl DfaIndex {
         let mut queue: VecDeque<StateId> = final_states.iter().copied().collect();
         let mut rev_transitions: HashMap<StateId, Vec<StateId>> = HashMap::default();
         for (from_state, token_map) in &token_transitions {
-            for (_, to_state) in token_map {
+            for to_state in token_map.values() {
                 rev_transitions
                     .entry(*to_state)
                     .or_default()
@@ -350,8 +353,8 @@ impl DfaIndex {
     fn build_byte_transitions(
         dfa: &DFA<Vec<StateId>>,
         start_state: AutomataStateId,
-    ) -> Result<(HashSet<StateId>, HashMap<StateId, HashMap<Byte, StateId>>)> {
-        let mut transitions: HashMap<StateId, HashMap<Byte, StateId>> = HashMap::default();
+    ) -> Result<(HashSet<StateId>, ByteTransitions)> {
+        let mut transitions: ByteTransitions = HashMap::default();
         let mut final_states: HashSet<StateId> = HashSet::default();
         let mut seen: HashSet<StateId> = HashSet::from_iter([start_state.as_u32()]);
         let mut next_states: Vec<AutomataStateId> = vec![start_state];
@@ -447,37 +450,40 @@ impl DfaIndex {
         self.byte_transitions
             .get(&state)
             .map(|transition_map| transition_map.keys().cloned().collect())
-            .ok_or_else(|| Error::InvalidState(state as usize))
+            .ok_or(Error::InvalidState(state as usize))
     }
 
     pub fn get_allowed_token_ids(&self, state: StateId) -> Result<Vec<TokenId>> {
         self.allowed_token_ids
             .get(&state)
             .cloned()
-            .ok_or_else(|| Error::InvalidState(state as usize))
+            .ok_or(Error::InvalidState(state as usize))
     }
 
     pub fn get_next_byte_state(&self, state: StateId, byte: Byte) -> Result<StateId> {
         self.byte_transitions
             .get(&state)
-            .ok_or_else(|| Error::InvalidState(state as usize))
+            .ok_or(Error::InvalidState(state as usize))
             .and_then(|transition_map| {
                 transition_map
                     .get(&byte)
                     .copied()
-                    .ok_or_else(|| Error::NoTransitionFound(state as usize, byte as usize))
+                    .ok_or(Error::NoTransitionFound(state as usize, byte as usize))
             })
     }
 
     pub fn get_next_token_state(&self, state: StateId, token_id: TokenId) -> Result<StateId> {
         self.token_transitions
             .get(&state)
-            .ok_or_else(|| Error::InvalidState(state as usize))
+            .ok_or(Error::InvalidState(state as usize))
             .and_then(|token_transition_map| {
                 token_transition_map
                     .get(&token_id)
                     .copied()
-                    .ok_or_else(|| Error::NoTokenTransitionFound(state as usize, token_id as usize))
+                    .ok_or(Error::NoTokenTransitionFound(
+                        state as usize,
+                        token_id as usize,
+                    ))
             })
     }
 
@@ -492,7 +498,7 @@ impl DfaIndex {
         self.allowed_token_infos
             .get(&state)
             .map(Vec::as_slice)
-            .ok_or_else(|| Error::InvalidState(state as usize))
+            .ok_or(Error::InvalidState(state as usize))
     }
 
     fn find_allowed_token_info(
@@ -520,7 +526,7 @@ impl DfaIndex {
             let token_str = self
                 .vocabulary
                 .get(&token_id)
-                .ok_or_else(|| Error::InvalidTokenId(token_id as usize))?;
+                .ok_or(Error::InvalidTokenId(token_id as usize))?;
             let mut current_state = state;
             for byte_ref in token_str.as_bytes().iter() {
                 let next_state = self.get_next_byte_state(current_state, *byte_ref)?;
